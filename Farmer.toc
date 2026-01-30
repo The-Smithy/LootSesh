@@ -1,0 +1,14 @@
+## Interface: 20504
+## Title: Farmer
+## Notes: Track looted items and calculate gold earned from vendor/AH prices
+## Author: YourName
+## Version: 1.0.0
+## SavedVariables: FarmerDB
+## SavedVariablesPerCharacter: FarmerCharDB
+## OptionalDeps: Auctionator
+## DefaultState: Enabled
+
+# Core files
+Core.lua
+Config.lua
+Farmer.lua
