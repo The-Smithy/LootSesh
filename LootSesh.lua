@@ -56,9 +56,14 @@ function eventHandlers:PLAYER_LOGIN()
         -- This is a UI reload - keep existing session data
         addon:Debug("UI reload detected - preserving session data")
     else
-        -- This is a new login or session timed out - start fresh session
+        -- This is a new login or session timed out
+        -- Save the previous session to history if it has data
+        addon:SaveSessionToHistory()
+        
+        -- Start fresh session
         addon:Debug("New session started")
         session.startTime = currentTime
+        session.endTime = 0
         session.totalVendorValue = 0
         session.totalAHValue = 0
         session.itemsLooted = {}
