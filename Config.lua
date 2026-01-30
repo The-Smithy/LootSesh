@@ -1,5 +1,5 @@
 --[[
-    Farmer - Config.lua
+    Loot Sesh - Config.lua
     Saved variables and configuration management
 ]]
 
@@ -85,28 +85,28 @@ end
 -- Initialize database
 function addon:InitDB()
     -- Create saved variables table if it doesn't exist
-    if not FarmerDB then
-        FarmerDB = DeepCopy(defaults)
+    if not LootSeshDB then
+        LootSeshDB = DeepCopy(defaults)
     else
         -- Merge with defaults to add any new settings
-        MergeTables(FarmerDB, defaults)
+        MergeTables(LootSeshDB, defaults)
     end
     
     -- Per-character saved variables
-    if not FarmerCharDB then
-        FarmerCharDB = DeepCopy(charDefaults)
+    if not LootSeshCharDB then
+        LootSeshCharDB = DeepCopy(charDefaults)
     else
-        MergeTables(FarmerCharDB, charDefaults)
+        MergeTables(LootSeshCharDB, charDefaults)
     end
     
-    self.db = FarmerDB
-    self.charDB = FarmerCharDB
+    self.db = LootSeshDB
+    self.charDB = LootSeshCharDB
 end
 
 -- Reset database to defaults
 function addon:ResetDB()
-    FarmerDB = DeepCopy(defaults)
-    self.db = FarmerDB
+    LootSeshDB = DeepCopy(defaults)
+    self.db = LootSeshDB
 end
 
 -- Reset session data
@@ -118,8 +118,8 @@ end
 
 -- Reset all character data
 function addon:ResetCharData()
-    FarmerCharDB = DeepCopy(charDefaults)
-    self.charDB = FarmerCharDB
+    LootSeshCharDB = DeepCopy(charDefaults)
+    self.charDB = LootSeshCharDB
     self.charDB.session.startTime = time()
     self:Print("All character data has been reset.")
 end

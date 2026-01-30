@@ -1,14 +1,14 @@
 ## Interface: 20504
-## Title: Farmer
+## Title: Loot Sesh
 ## Notes: Track looted items and calculate gold earned from vendor/AH prices
 ## Author: YourName
 ## Version: 1.0.0
-## SavedVariables: FarmerDB
-## SavedVariablesPerCharacter: FarmerCharDB
+## SavedVariables: LootSeshDB
+## SavedVariablesPerCharacter: LootSeshCharDB
 ## OptionalDeps: Auctionator
 ## DefaultState: Enabled
 
 # Core files
 Core.lua
 Config.lua
-Farmer.lua
+LootSesh.lua

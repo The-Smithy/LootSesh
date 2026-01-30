@@ -1,5 +1,5 @@
 --[[
-    Farmer - Core.lua
+    Loot Sesh - Core.lua
     Core functionality and utilities
 ]]
 
@@ -60,22 +60,22 @@ end
 
 -- Slash command handler
 function addon:RegisterSlashCommands()
-    SLASH_FARMER1 = "/farmer"
-    SLASH_FARMER2 = "/farm"
+    SLASH_LOOTSESH1 = "/lootsesh"
+    SLASH_LOOTSESH2 = "/ls"
     
-    SlashCmdList["FARMER"] = function(msg)
+    SlashCmdList["LOOTSESH"] = function(msg)
         local cmd, args = msg:match("^(%S*)%s*(.-)$")
         cmd = cmd:lower()
         
         if cmd == "" or cmd == "help" then
             self:Print("Available commands:")
-            self:Print("  /farmer show - Toggle loot tracker window")
-            self:Print("  /farmer session - Show session summary")
-            self:Print("  /farmer lifetime - Show lifetime stats")
-            self:Print("  /farmer reset session - Reset session data")
-            self:Print("  /farmer reset all - Reset all character data")
-            self:Print("  /farmer ah - Toggle AH/Vendor price preference")
-            self:Print("  /farmer debug - Toggle debug mode")
+            self:Print("  /lootsesh show - Toggle loot tracker window")
+            self:Print("  /lootsesh session - Show session summary")
+            self:Print("  /lootsesh lifetime - Show lifetime stats")
+            self:Print("  /lootsesh reset session - Reset session data")
+            self:Print("  /lootsesh reset all - Reset all character data")
+            self:Print("  /lootsesh ah - Toggle AH/Vendor price preference")
+            self:Print("  /lootsesh debug - Toggle debug mode")
         elseif cmd == "session" then
             local session = self.charDB.session
             local useAH = self:GetSetting("features.useAHPrices")
@@ -115,13 +115,13 @@ function addon:RegisterSlashCommands()
             elseif args == "all" then
                 self:ResetCharData()
             else
-                self:Print("Usage: /farmer reset session OR /farmer reset all")
+                self:Print("Usage: /lootsesh reset session OR /lootsesh reset all")
             end
         else
-            self:Print("Unknown command. Type /farmer help for available commands.")
+            self:Print("Unknown command. Type /lootsesh help for available commands.")
         end
     end
 end
 
 -- Export addon to global namespace for debugging (optional)
-_G["Farmer"] = addon
+_G["LootSesh"] = addon
