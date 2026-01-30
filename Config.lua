@@ -20,6 +20,8 @@ local defaults = {
             xOfs = 0,
             yOfs = 0,
         },
+        sortMode = "value",
+        sortAscending = false,
     },
     
     -- Feature toggles

@@ -267,88 +267,589 @@ function addon:GetGoldPerHour()
 end
 
 --[[
-    UI Creation Example
-    Creates a simple movable frame
+    UI Creation - Clean Modern Design with Sorting
 ]]
+
+-- Quality colors for items
+local QUALITY_COLORS = {
+    [0] = {0.62, 0.62, 0.62},  -- Poor (gray)
+    [1] = {1.00, 1.00, 1.00},  -- Common (white)
+    [2] = {0.12, 1.00, 0.00},  -- Uncommon (green)
+    [3] = {0.00, 0.44, 0.87},  -- Rare (blue)
+    [4] = {0.64, 0.21, 0.93},  -- Epic (purple)
+    [5] = {1.00, 0.50, 0.00},  -- Legendary (orange)
+}
+
+-- Sort modes
+addon.sortModes = {
+    { id = "value", name = "Value", desc = "Sort by total value (highest first)" },
+    { id = "count", name = "Count", desc = "Sort by quantity (highest first)" },
+    { id = "name", name = "Name", desc = "Sort alphabetically by name" },
+    { id = "quality", name = "Quality", desc = "Sort by item quality (best first)" },
+    { id = "recent", name = "Recent", desc = "Sort by most recently looted" },
+}
+addon.currentSortMode = "value"
+addon.sortAscending = false
+
+-- Create a styled backdrop
+local function CreateStyledBackdrop(frame, alpha)
+    alpha = alpha or 0.9
+    frame:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        tile = false,
+        tileSize = 0,
+        edgeSize = 1,
+        insets = { left = 0, right = 0, top = 0, bottom = 0 }
+    })
+    frame:SetBackdropColor(0.08, 0.08, 0.12, alpha)
+    frame:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
+end
+
+-- Create a highlight backdrop
+local function CreateHighlightBackdrop(frame)
+    frame:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = nil,
+        tile = false,
+    })
+    frame:SetBackdropColor(1, 1, 1, 0.05)
+end
+
+-- Create a separator line
+local function CreateSeparator(parent, yOffset)
+    local line = parent:CreateTexture(nil, "ARTWORK")
+    line:SetHeight(1)
+    line:SetPoint("LEFT", 12, 0)
+    line:SetPoint("RIGHT", -12, 0)
+    line:SetPoint("TOP", 0, yOffset)
+    line:SetColorTexture(0.4, 0.4, 0.45, 0.5)
+    return line
+end
+
+-- Create a stat row
+local function CreateStatRow(parent, label, yOffset)
+    local labelText = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    labelText:SetPoint("TOPLEFT", 14, yOffset)
+    labelText:SetTextColor(0.7, 0.7, 0.7)
+    labelText:SetText(label)
+    
+    local valueText = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    valueText:SetPoint("TOPRIGHT", -14, yOffset)
+    valueText:SetTextColor(1, 1, 1)
+    valueText:SetJustifyH("RIGHT")
+    
+    return labelText, valueText
+end
+
+-- Create custom close button
+local function CreateCloseButton(parent)
+    local btn = CreateFrame("Button", nil, parent)
+    btn:SetSize(16, 16)
+    btn:SetPoint("TOPRIGHT", -8, -8)
+    
+    local tex = btn:CreateTexture(nil, "ARTWORK")
+    tex:SetAllPoints()
+    tex:SetTexture("Interface\\Buttons\\UI-StopButton")
+    tex:SetVertexColor(0.7, 0.7, 0.7)
+    btn.tex = tex
+    
+    btn:SetScript("OnEnter", function(self)
+        self.tex:SetVertexColor(1, 0.3, 0.3)
+    end)
+    btn:SetScript("OnLeave", function(self)
+        self.tex:SetVertexColor(0.7, 0.7, 0.7)
+    end)
+    
+    return btn
+end
+
+-- Create styled button
+local function CreateStyledButton(parent, text, width, height)
+    local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    btn:SetSize(width or 70, height or 20)
+    
+    btn:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        tile = false,
+        edgeSize = 1,
+        insets = { left = 0, right = 0, top = 0, bottom = 0 }
+    })
+    btn:SetBackdropColor(0.15, 0.15, 0.2, 1)
+    btn:SetBackdropBorderColor(0.4, 0.4, 0.45, 1)
+    
+    local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("CENTER", 0, 0)
+    label:SetText(text)
+    label:SetTextColor(0.9, 0.9, 0.9)
+    btn.label = label
+    
+    btn:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(0.25, 0.25, 0.35, 1)
+        self:SetBackdropBorderColor(0.5, 0.7, 1, 1)
+    end)
+    btn:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(0.15, 0.15, 0.2, 1)
+        self:SetBackdropBorderColor(0.4, 0.4, 0.45, 1)
+    end)
+    
+    return btn
+end
+
+-- Create dropdown menu for sorting
+local function CreateSortDropdown(parent)
+    local dropdown = CreateFrame("Frame", "FarmerSortDropdown", parent, "BackdropTemplate")
+    dropdown:SetSize(90, 22)
+    
+    dropdown:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        tile = false,
+        edgeSize = 1,
+        insets = { left = 0, right = 0, top = 0, bottom = 0 }
+    })
+    dropdown:SetBackdropColor(0.12, 0.12, 0.16, 1)
+    dropdown:SetBackdropBorderColor(0.4, 0.4, 0.45, 1)
+    
+    local text = dropdown:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    text:SetPoint("LEFT", 8, 0)
+    text:SetTextColor(0.9, 0.9, 0.9)
+    text:SetText("Value")
+    dropdown.text = text
+    
+    local arrow = dropdown:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    arrow:SetPoint("RIGHT", -6, 0)
+    arrow:SetText("▼")
+    arrow:SetTextColor(0.6, 0.6, 0.6)
+    
+    -- Dropdown menu frame
+    local menu = CreateFrame("Frame", "FarmerSortMenu", dropdown, "BackdropTemplate")
+    menu:SetPoint("TOP", dropdown, "BOTTOM", 0, -2)
+    menu:SetSize(90, 5)
+    menu:SetFrameStrata("DIALOG")
+    menu:Hide()
+    
+    menu:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        tile = false,
+        edgeSize = 1,
+        insets = { left = 0, right = 0, top = 0, bottom = 0 }
+    })
+    menu:SetBackdropColor(0.1, 0.1, 0.14, 0.98)
+    menu:SetBackdropBorderColor(0.4, 0.4, 0.45, 1)
+    
+    dropdown.menu = menu
+    dropdown.options = {}
+    
+    -- Create menu items
+    local yOffset = -4
+    for i, sortMode in ipairs(addon.sortModes) do
+        local item = CreateFrame("Button", nil, menu)
+        item:SetSize(82, 18)
+        item:SetPoint("TOP", 0, yOffset)
+        
+        local itemText = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        itemText:SetPoint("LEFT", 6, 0)
+        itemText:SetText(sortMode.name)
+        itemText:SetTextColor(0.8, 0.8, 0.8)
+        item.text = itemText
+        
+        local highlight = item:CreateTexture(nil, "HIGHLIGHT")
+        highlight:SetAllPoints()
+        highlight:SetColorTexture(0.3, 0.5, 0.8, 0.3)
+        
+        item:SetScript("OnClick", function()
+            addon.currentSortMode = sortMode.id
+            dropdown.text:SetText(sortMode.name)
+            menu:Hide()
+            addon:UpdateItemList()
+        end)
+        
+        item:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(sortMode.desc, 1, 1, 1)
+            GameTooltip:Show()
+        end)
+        item:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        
+        dropdown.options[i] = item
+        yOffset = yOffset - 18
+    end
+    
+    menu:SetHeight(-yOffset + 4)
+    
+    -- Toggle menu
+    dropdown:EnableMouse(true)
+    dropdown:SetScript("OnMouseDown", function()
+        if menu:IsShown() then
+            menu:Hide()
+        else
+            menu:Show()
+        end
+    end)
+    
+    dropdown:SetScript("OnEnter", function(self)
+        self:SetBackdropBorderColor(0.5, 0.7, 1, 1)
+    end)
+    dropdown:SetScript("OnLeave", function(self)
+        self:SetBackdropBorderColor(0.4, 0.4, 0.45, 1)
+    end)
+    
+    -- Close menu when clicking elsewhere
+    menu:SetScript("OnShow", function()
+        menu:SetPropagateKeyboardInput(true)
+    end)
+    
+    return dropdown
+end
+
+-- Create item row for the scroll list
+local function CreateItemRow(parent, index)
+    local row = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    row:SetSize(parent:GetWidth() - 4, 28)
+    
+    -- Alternating row colors
+    if index % 2 == 0 then
+        row:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+        })
+        row:SetBackdropColor(1, 1, 1, 0.03)
+    end
+    
+    -- Item icon
+    local icon = row:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(22, 22)
+    icon:SetPoint("LEFT", 4, 0)
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    row.icon = icon
+    
+    -- Quality border for icon
+    local iconBorder = row:CreateTexture(nil, "OVERLAY")
+    iconBorder:SetSize(24, 24)
+    iconBorder:SetPoint("CENTER", icon, "CENTER", 0, 0)
+    iconBorder:SetTexture("Interface\\Buttons\\WHITE8x8")
+    iconBorder:SetVertexColor(0.3, 0.3, 0.3, 0.8)
+    row.iconBorder = iconBorder
+    
+    -- Item name
+    local name = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    name:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+    name:SetPoint("RIGHT", row, "RIGHT", -70, 0)
+    name:SetJustifyH("LEFT")
+    name:SetWordWrap(false)
+    row.name = name
+    
+    -- Count
+    local count = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    count:SetPoint("RIGHT", row, "RIGHT", -50, 0)
+    count:SetWidth(25)
+    count:SetJustifyH("RIGHT")
+    count:SetTextColor(0.7, 0.7, 0.7)
+    row.count = count
+    
+    -- Value
+    local value = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    value:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+    value:SetWidth(42)
+    value:SetJustifyH("RIGHT")
+    value:SetTextColor(1, 0.82, 0)
+    row.value = value
+    
+    -- Highlight effect
+    local highlight = row:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAllPoints()
+    highlight:SetColorTexture(1, 1, 1, 0.08)
+    
+    -- Tooltip handling
+    row:SetScript("OnEnter", function(self)
+        if self.itemLink then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetHyperlink(self.itemLink)
+            GameTooltip:Show()
+        end
+    end)
+    row:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    
+    -- Click to link item in chat
+    row:SetScript("OnClick", function(self)
+        if self.itemLink and IsShiftKeyDown() then
+            ChatEdit_InsertLink(self.itemLink)
+        end
+    end)
+    
+    return row
+end
+
 function addon:CreateMainFrame()
-    -- Don't create if already exists
     if self.mainFrame then return end
     
+    -- Main frame
     local frame = CreateFrame("Frame", "FarmerMainFrame", UIParent, "BackdropTemplate")
-    frame:SetSize(220, 210)
+    frame:SetSize(320, 420)
+    frame:SetFrameStrata("MEDIUM")
+    frame:SetClampedToScreen(true)
     
-    -- Apply saved position or default
     local pos = self:GetSetting("ui.position")
     frame:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
     
-    -- Backdrop (border and background)
-    frame:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true,
-        tileSize = 32,
-        edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 }
-    })
+    CreateStyledBackdrop(frame, 0.95)
     
-    -- Title text
-    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOP", 0, -10)
-    title:SetText("Farmer - Loot Tracker")
+    -- Add subtle gradient at top
+    local headerGradient = frame:CreateTexture(nil, "ARTWORK")
+    headerGradient:SetHeight(50)
+    headerGradient:SetPoint("TOPLEFT", 1, -1)
+    headerGradient:SetPoint("TOPRIGHT", -1, -1)
+    headerGradient:SetColorTexture(0.15, 0.4, 0.6, 0.15)
+    headerGradient:SetGradient("VERTICAL", CreateColor(0.15, 0.4, 0.6, 0), CreateColor(0.15, 0.4, 0.6, 0.2))
     
-    -- Session header
-    local sessionHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    sessionHeader:SetPoint("TOPLEFT", 15, -35)
-    sessionHeader:SetText("|cff00ff00Session:|r")
-    frame.sessionHeader = sessionHeader
+    -- Title
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("TOPLEFT", 14, -12)
+    title:SetText("|cff5ca8e0FARMER|r")
+    title:SetFont(title:GetFont(), 14, "OUTLINE")
     
-    -- Session gold value
-    local sessionGold = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    sessionGold:SetPoint("TOPLEFT", 15, -50)
-    sessionGold:SetText("Gold: 0g 0s 0c")
-    frame.sessionGold = sessionGold
+    local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    subtitle:SetPoint("LEFT", title, "RIGHT", 6, 0)
+    subtitle:SetText("Loot Tracker")
+    subtitle:SetTextColor(0.6, 0.6, 0.6)
     
-    -- Items value (AH or Vendor)
-    local itemsValue = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    itemsValue:SetPoint("TOPLEFT", 15, -65)
-    itemsValue:SetText("Items: 0g 0s 0c")
-    frame.itemsValue = itemsValue
+    -- Close button
+    local closeBtn = CreateCloseButton(frame)
+    closeBtn:SetScript("OnClick", function()
+        frame:Hide()
+    end)
     
-    -- Total value
-    local totalValue = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    totalValue:SetPoint("TOPLEFT", 15, -85)
-    totalValue:SetText("|cffffd700Total: 0g 0s 0c|r")
+    -- Stats section
+    local statsSection = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    statsSection:SetPoint("TOPLEFT", 10, -35)
+    statsSection:SetPoint("TOPRIGHT", -10, -35)
+    statsSection:SetHeight(95)
+    CreateStyledBackdrop(statsSection, 0.5)
+    
+    -- Total value (big display)
+    local totalLabel = statsSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    totalLabel:SetPoint("TOPLEFT", 12, -8)
+    totalLabel:SetText("SESSION TOTAL")
+    totalLabel:SetTextColor(0.5, 0.5, 0.5)
+    totalLabel:SetFont(totalLabel:GetFont(), 9)
+    
+    local totalValue = statsSection:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    totalValue:SetPoint("TOPLEFT", 12, -20)
+    totalValue:SetTextColor(1, 0.82, 0)
+    totalValue:SetFont(totalValue:GetFont(), 18)
+    totalValue:SetText("0g 0s 0c")
     frame.totalValue = totalValue
     
-    -- Gold per hour
-    local gph = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    gph:SetPoint("TOPLEFT", 15, -105)
-    gph:SetText("GPH: 0g 0s 0c")
-    frame.gph = gph
+    -- Price mode indicator
+    local priceMode = statsSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    priceMode:SetPoint("LEFT", totalValue, "RIGHT", 8, 0)
+    priceMode:SetTextColor(0.5, 0.5, 0.5)
+    priceMode:SetText("(Vendor)")
+    frame.priceMode = priceMode
     
-    -- Session duration
-    local duration = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    duration:SetPoint("TOPLEFT", 15, -120)
-    duration:SetText("Duration: 0m")
-    frame.duration = duration
+    CreateSeparator(statsSection, -45)
     
-    -- Lifetime header
-    local lifetimeHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    lifetimeHeader:SetPoint("TOPLEFT", 15, -145)
-    lifetimeHeader:SetText("|cff9999ffLifetime:|r")
-    frame.lifetimeHeader = lifetimeHeader
+    -- Stats grid
+    local _, goldValue = CreateStatRow(statsSection, "Raw Gold", -55)
+    frame.sessionGold = goldValue
     
-    -- Lifetime total
-    local lifetimeTotal = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    lifetimeTotal:SetPoint("TOPLEFT", 15, -160)
-    lifetimeTotal:SetText("Total: 0g 0s 0c")
-    frame.lifetimeTotal = lifetimeTotal
+    local _, itemsValue = CreateStatRow(statsSection, "Items Value", -70)
+    frame.itemsValue = itemsValue
     
-    -- Items looted count
-    local itemCount = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    itemCount:SetPoint("TOPLEFT", 15, -175)
-    itemCount:SetText("Items: 0")
-    frame.itemCount = itemCount
+    local _, gphValue = CreateStatRow(statsSection, "Gold/Hour", -85)
+    frame.gph = gphValue
+    
+    -- Duration and lifetime on right side
+    local durationLabel = statsSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    durationLabel:SetPoint("TOPRIGHT", -14, -8)
+    durationLabel:SetTextColor(0.5, 0.5, 0.5)
+    durationLabel:SetFont(durationLabel:GetFont(), 9)
+    durationLabel:SetText("DURATION")
+    
+    local durationValue = statsSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    durationValue:SetPoint("TOPRIGHT", -14, -20)
+    durationValue:SetTextColor(1, 1, 1)
+    durationValue:SetText("0m")
+    frame.duration = durationValue
+    
+    -- Items section header
+    local itemsHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    itemsHeader:SetPoint("TOPLEFT", 14, -140)
+    itemsHeader:SetText("LOOTED ITEMS")
+    itemsHeader:SetTextColor(0.5, 0.5, 0.5)
+    itemsHeader:SetFont(itemsHeader:GetFont(), 9)
+    
+    -- Item count
+    local itemCountText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    itemCountText:SetPoint("LEFT", itemsHeader, "RIGHT", 6, 0)
+    itemCountText:SetTextColor(0.4, 0.4, 0.4)
+    itemCountText:SetText("(0)")
+    frame.itemCountText = itemCountText
+    
+    -- Sort controls
+    local sortLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    sortLabel:SetPoint("TOPRIGHT", -105, -140)
+    sortLabel:SetText("Sort:")
+    sortLabel:SetTextColor(0.5, 0.5, 0.5)
+    
+    local sortDropdown = CreateSortDropdown(frame)
+    sortDropdown:SetPoint("TOPRIGHT", -10, -137)
+    frame.sortDropdown = sortDropdown
+    
+    -- Sort direction button
+    local sortDirBtn = CreateFrame("Button", nil, frame, "BackdropTemplate")
+    sortDirBtn:SetSize(22, 22)
+    sortDirBtn:SetPoint("RIGHT", sortDropdown, "LEFT", -4, 0)
+    sortDirBtn:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        tile = false,
+        edgeSize = 1,
+    })
+    sortDirBtn:SetBackdropColor(0.12, 0.12, 0.16, 1)
+    sortDirBtn:SetBackdropBorderColor(0.4, 0.4, 0.45, 1)
+    
+    local sortDirText = sortDirBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    sortDirText:SetPoint("CENTER", 0, 0)
+    sortDirText:SetText("▼")
+    sortDirText:SetTextColor(0.7, 0.7, 0.7)
+    frame.sortDirText = sortDirText
+    
+    sortDirBtn:SetScript("OnClick", function()
+        addon.sortAscending = not addon.sortAscending
+        sortDirText:SetText(addon.sortAscending and "▲" or "▼")
+        addon:UpdateItemList()
+    end)
+    sortDirBtn:SetScript("OnEnter", function(self)
+        self:SetBackdropBorderColor(0.5, 0.7, 1, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(addon.sortAscending and "Ascending" or "Descending", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    sortDirBtn:SetScript("OnLeave", function(self)
+        self:SetBackdropBorderColor(0.4, 0.4, 0.45, 1)
+        GameTooltip:Hide()
+    end)
+    
+    -- Column headers
+    local headerRow = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    headerRow:SetPoint("TOPLEFT", 10, -155)
+    headerRow:SetPoint("TOPRIGHT", -10, -155)
+    headerRow:SetHeight(18)
+    headerRow:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+    })
+    headerRow:SetBackdropColor(0.15, 0.15, 0.2, 0.8)
+    
+    local colItem = headerRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    colItem:SetPoint("LEFT", 30, 0)
+    colItem:SetText("Item")
+    colItem:SetTextColor(0.6, 0.6, 0.6)
+    colItem:SetFont(colItem:GetFont(), 9)
+    
+    local colQty = headerRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    colQty:SetPoint("RIGHT", -52, 0)
+    colQty:SetText("Qty")
+    colQty:SetTextColor(0.6, 0.6, 0.6)
+    colQty:SetFont(colQty:GetFont(), 9)
+    
+    local colValue = headerRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    colValue:SetPoint("RIGHT", -8, 0)
+    colValue:SetText("Value")
+    colValue:SetTextColor(0.6, 0.6, 0.6)
+    colValue:SetFont(colValue:GetFont(), 9)
+    
+    -- Scrollable item list
+    local scrollFrame = CreateFrame("ScrollFrame", "FarmerScrollFrame", frame, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 10, -175)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -28, 50)
+    
+    -- Style the scroll bar
+    local scrollBar = _G["FarmerScrollFrameScrollBar"]
+    if scrollBar then
+        scrollBar:SetPoint("TOPLEFT", scrollFrame, "TOPRIGHT", 2, -16)
+        scrollBar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMRIGHT", 2, 16)
+    end
+    
+    local scrollContent = CreateFrame("Frame", nil, scrollFrame)
+    scrollContent:SetSize(scrollFrame:GetWidth(), 1)
+    scrollFrame:SetScrollChild(scrollContent)
+    frame.scrollContent = scrollContent
+    
+    -- Item rows pool
+    frame.itemRows = {}
+    
+    -- Bottom section with buttons
+    local bottomSection = CreateFrame("Frame", nil, frame)
+    bottomSection:SetPoint("BOTTOMLEFT", 10, 10)
+    bottomSection:SetPoint("BOTTOMRIGHT", -10, 10)
+    bottomSection:SetHeight(32)
+    
+    -- Toggle AH/Vendor button
+    local togglePriceBtn = CreateStyledButton(bottomSection, "AH Prices", 70, 24)
+    togglePriceBtn:SetPoint("LEFT", 0, 0)
+    togglePriceBtn:SetScript("OnClick", function()
+        local current = addon:GetSetting("features.useAHPrices")
+        addon:SetSetting("features.useAHPrices", not current)
+        addon:UpdateMainFrame()
+    end)
+    togglePriceBtn:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(0.25, 0.25, 0.35, 1)
+        self:SetBackdropBorderColor(0.5, 0.7, 1, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Toggle between AH and Vendor prices", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    togglePriceBtn:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(0.15, 0.15, 0.2, 1)
+        self:SetBackdropBorderColor(0.4, 0.4, 0.45, 1)
+        GameTooltip:Hide()
+    end)
+    frame.togglePriceBtn = togglePriceBtn
+    
+    -- Reset session button
+    local resetBtn = CreateStyledButton(bottomSection, "Reset", 55, 24)
+    resetBtn:SetPoint("RIGHT", 0, 0)
+    resetBtn:SetScript("OnClick", function()
+        StaticPopup_Show("FARMER_RESET_CONFIRM")
+    end)
+    resetBtn:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(0.35, 0.15, 0.15, 1)
+        self:SetBackdropBorderColor(0.8, 0.3, 0.3, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Reset session data", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    resetBtn:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(0.15, 0.15, 0.2, 1)
+        self:SetBackdropBorderColor(0.4, 0.4, 0.45, 1)
+        GameTooltip:Hide()
+    end)
+    
+    -- Lifetime stats button
+    local lifetimeBtn = CreateStyledButton(bottomSection, "Lifetime", 60, 24)
+    lifetimeBtn:SetPoint("RIGHT", resetBtn, "LEFT", -6, 0)
+    lifetimeBtn:SetScript("OnClick", function()
+        addon:ShowLifetimePopup()
+    end)
+    lifetimeBtn:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(0.25, 0.25, 0.35, 1)
+        self:SetBackdropBorderColor(0.5, 0.7, 1, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("View lifetime statistics", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    lifetimeBtn:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(0.15, 0.15, 0.2, 1)
+        self:SetBackdropBorderColor(0.4, 0.4, 0.45, 1)
+        GameTooltip:Hide()
+    end)
     
     -- Make frame movable
     frame:SetMovable(true)
@@ -363,7 +864,6 @@ function addon:CreateMainFrame()
     
     frame:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
-        -- Save position
         local point, _, relativePoint, xOfs, yOfs = self:GetPoint()
         addon:SetSetting("ui.position", {
             point = point,
@@ -373,47 +873,199 @@ function addon:CreateMainFrame()
         })
     end)
     
-    -- Close button
-    local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    closeBtn:SetPoint("TOPRIGHT", -2, -2)
-    closeBtn:SetScript("OnClick", function()
-        frame:Hide()
-    end)
-    
-    -- Reset session button
-    local resetBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    resetBtn:SetSize(60, 20)
-    resetBtn:SetPoint("BOTTOMRIGHT", -10, 10)
-    resetBtn:SetText("Reset")
-    resetBtn:SetScript("OnClick", function()
-        addon:ResetSession()
-        addon:UpdateMainFrame()
-    end)
-    
     -- Apply scale
     frame:SetScale(self:GetSetting("ui.scale"))
     
-    -- Start hidden (toggle with slash command or keybind)
+    -- Start hidden
     frame:Hide()
     
     self.mainFrame = frame
     
-    -- Add toggle to slash command
+    -- Create reset confirmation dialog
+    StaticPopupDialogs["FARMER_RESET_CONFIRM"] = {
+        text = "Reset session data? This cannot be undone.",
+        button1 = "Reset",
+        button2 = "Cancel",
+        OnAccept = function()
+            addon:ResetSession()
+            addon:UpdateMainFrame()
+        end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        preferredIndex = 3,
+    }
+    
+    -- Override slash command
     local oldHandler = SlashCmdList["FARMER"]
     SlashCmdList["FARMER"] = function(msg)
         local cmd = msg:match("^(%S*)"):lower()
-        if cmd == "show" or cmd == "toggle" then
+        if cmd == "show" or cmd == "toggle" or cmd == "" then
+            if cmd == "" then
+                -- Default action: show/hide the frame
+            end
             if frame:IsShown() then
                 frame:Hide()
             else
                 frame:Show()
+                addon:UpdateMainFrame()
             end
         else
             oldHandler(msg)
         end
     end
     
-    addon:Debug("Main frame created")
+    addon:Debug("Enhanced main frame created")
+end
+
+-- Show lifetime stats popup
+function addon:ShowLifetimePopup()
+    local lifetime = self.charDB.lifetime
+    local useAH = self:GetSetting("features.useAHPrices")
+    local itemValue = useAH and lifetime.totalAHValue or lifetime.totalVendorValue
+    local priceType = useAH and "AH" or "Vendor"
+    local total = lifetime.rawGoldLooted + itemValue
+    
+    local msg = string.format(
+        "|cff9999ff=== Lifetime Statistics ===|r\n\n" ..
+        "Total Items Looted: |cffffffff%d|r\n" ..
+        "Raw Gold: |cffffd700%s|r\n" ..
+        "Items (%s): |cffffd700%s|r\n\n" ..
+        "|cffffd700Total: %s|r",
+        lifetime.totalItemsLooted,
+        self.utils.FormatMoney(lifetime.rawGoldLooted),
+        priceType,
+        self.utils.FormatMoney(itemValue),
+        self.utils.FormatMoney(total)
+    )
+    
+    -- Simple message display
+    message(msg)
+end
+
+-- Sort items based on current mode
+function addon:GetSortedItems()
+    local session = self.charDB.session
+    local useAH = self:GetSetting("features.useAHPrices")
+    local items = {}
+    
+    -- Convert to array for sorting
+    local itemOrder = 0
+    for itemID, data in pairs(session.itemsLooted) do
+        itemOrder = itemOrder + 1
+        table.insert(items, {
+            id = itemID,
+            name = data.name,
+            count = data.count,
+            quality = data.quality or 1,
+            link = data.link,
+            value = useAH and data.ahValue or data.vendorValue,
+            order = itemOrder,  -- Track insertion order for "recent" sorting
+        })
+    end
+    
+    -- Sort based on current mode
+    local mode = self.currentSortMode
+    local ascending = self.sortAscending
+    
+    table.sort(items, function(a, b)
+        local result
+        if mode == "value" then
+            result = a.value > b.value
+        elseif mode == "count" then
+            result = a.count > b.count
+        elseif mode == "name" then
+            result = a.name < b.name
+        elseif mode == "quality" then
+            if a.quality == b.quality then
+                result = a.value > b.value
+            else
+                result = a.quality > b.quality
+            end
+        elseif mode == "recent" then
+            result = a.order > b.order
+        else
+            result = a.value > b.value
+        end
+        
+        if ascending then
+            return not result
+        end
+        return result
+    end)
+    
+    return items
+end
+
+-- Update the item list
+function addon:UpdateItemList()
+    local frame = self.mainFrame
+    if not frame then return end
+    
+    local scrollContent = frame.scrollContent
+    local items = self:GetSortedItems()
+    
+    -- Hide existing rows
+    for _, row in ipairs(frame.itemRows) do
+        row:Hide()
+    end
+    
+    -- Create/update rows
+    local yOffset = 0
+    for i, itemData in ipairs(items) do
+        local row = frame.itemRows[i]
+        if not row then
+            row = CreateItemRow(scrollContent, i)
+            frame.itemRows[i] = row
+        end
+        
+        row:SetPoint("TOPLEFT", 2, yOffset)
+        row:SetWidth(scrollContent:GetWidth() - 4)
+        
+        -- Set icon
+        local itemTexture = GetItemIcon(itemData.id)
+        row.icon:SetTexture(itemTexture or "Interface\\Icons\\INV_Misc_QuestionMark")
+        
+        -- Set quality border color
+        local qualityColor = QUALITY_COLORS[itemData.quality] or QUALITY_COLORS[1]
+        row.iconBorder:SetVertexColor(qualityColor[1], qualityColor[2], qualityColor[3], 0.8)
+        
+        -- Set name with quality color
+        local r, g, b = qualityColor[1], qualityColor[2], qualityColor[3]
+        row.name:SetText(itemData.name)
+        row.name:SetTextColor(r, g, b)
+        
+        -- Set count
+        row.count:SetText("x" .. itemData.count)
+        
+        -- Set value (shortened format)
+        local valueText = self:FormatMoneyShort(itemData.value)
+        row.value:SetText(valueText)
+        
+        row.itemLink = itemData.link
+        row:Show()
+        
+        yOffset = yOffset - 28
+    end
+    
+    -- Update scroll content height
+    scrollContent:SetHeight(math.max(1, #items * 28))
+end
+
+-- Short money format for item list
+function addon:FormatMoneyShort(copper)
+    local gold = math.floor(copper / 10000)
+    local silver = math.floor((copper % 10000) / 100)
+    
+    if gold >= 1000 then
+        return string.format("%.1fk", gold / 1000)
+    elseif gold > 0 then
+        return string.format("%dg%d", gold, silver)
+    elseif silver > 0 then
+        return string.format("%ds", silver)
+    else
+        return string.format("%dc", copper % 100)
+    end
 end
 
 -- Update the main frame with current data
@@ -422,31 +1074,38 @@ function addon:UpdateMainFrame()
     if not frame then return end
     
     local session = self.charDB.session
-    local lifetime = self.charDB.lifetime
     local useAH = self:GetSetting("features.useAHPrices")
     
+    -- Update price mode indicator and button
+    local priceType = useAH and "AH" or "Vendor"
+    frame.priceMode:SetText("(" .. priceType .. ")")
+    frame.togglePriceBtn.label:SetText(useAH and "Vendor" or "AH Prices")
+    
     -- Session data
-    frame.sessionGold:SetText("Gold: " .. self.utils.FormatMoney(session.rawGoldLooted))
+    frame.sessionGold:SetText(self.utils.FormatMoney(session.rawGoldLooted))
     
     local itemValue = useAH and session.totalAHValue or session.totalVendorValue
-    local priceType = useAH and "(AH)" or "(Vendor)"
-    frame.itemsValue:SetText("Items: " .. self.utils.FormatMoney(itemValue) .. " " .. priceType)
+    frame.itemsValue:SetText(self.utils.FormatMoney(itemValue))
     
     local totalSession = session.rawGoldLooted + itemValue
-    frame.totalValue:SetText("|cffffd700Total: " .. self.utils.FormatMoney(totalSession) .. "|r")
+    frame.totalValue:SetText(self.utils.FormatMoney(totalSession))
     
     -- Gold per hour
     local gph = self:GetGoldPerHour()
-    frame.gph:SetText("GPH: " .. self.utils.FormatMoney(gph))
+    frame.gph:SetText(self.utils.FormatMoney(gph))
     
     -- Duration
-    frame.duration:SetText("Duration: " .. self:GetSessionDuration())
+    frame.duration:SetText(self:GetSessionDuration())
     
-    -- Lifetime data
-    local lifetimeValue = useAH and lifetime.totalAHValue or lifetime.totalVendorValue
-    local lifetimeTotal = lifetime.rawGoldLooted + lifetimeValue
-    frame.lifetimeTotal:SetText("Total: " .. self.utils.FormatMoney(lifetimeTotal))
-    frame.itemCount:SetText("Items: " .. lifetime.totalItemsLooted)
+    -- Update item count
+    local itemCount = 0
+    for _ in pairs(session.itemsLooted) do
+        itemCount = itemCount + 1
+    end
+    frame.itemCountText:SetText("(" .. itemCount .. ")")
+    
+    -- Update item list
+    self:UpdateItemList()
 end
 
 -- Periodic update for duration and GPH display
