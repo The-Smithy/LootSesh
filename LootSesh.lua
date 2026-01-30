@@ -5,6 +5,9 @@
 
 local addonName, addon = ...
 
+-- Session timeout in seconds (5 minutes) - if more time has passed since last save, start new session
+local SESSION_TIMEOUT = 300
+
 -- Create main event frame
 local eventFrame = CreateFrame("Frame", "FarmerFrame", UIParent)
 
@@ -41,10 +44,29 @@ end
 
 -- PLAYER_LOGIN: Player has logged in
 function eventHandlers:PLAYER_LOGIN()
-    -- Initialize session start time
-    if addon.charDB.session.startTime == 0 then
-        addon.charDB.session.startTime = time()
+    local currentTime = time()
+    local session = addon.charDB.session
+    
+    -- Determine if this is a UI reload or a new session
+    -- If lastSaveTime exists and is within SESSION_TIMEOUT, this is likely a reload
+    local isReloadSession = session.lastSaveTime > 0 and 
+                            (currentTime - session.lastSaveTime) < SESSION_TIMEOUT
+    
+    if isReloadSession then
+        -- This is a UI reload - keep existing session data
+        addon:Debug("UI reload detected - preserving session data")
+    else
+        -- This is a new login or session timed out - start fresh session
+        addon:Debug("New session started")
+        session.startTime = currentTime
+        session.totalVendorValue = 0
+        session.totalAHValue = 0
+        session.itemsLooted = {}
+        session.rawGoldLooted = 0
     end
+    
+    -- Update last save time
+    session.lastSaveTime = currentTime
     
     -- Check for Auctionator
     addon.hasAuctionator = (Auctionator ~= nil) or (AUCTIONATOR_ENABLE ~= nil)
@@ -76,6 +98,10 @@ function eventHandlers:PLAYER_LOGOUT()
     if addon.mainFrame then
         addon:SetSetting("ui.visible", addon.mainFrame:IsShown())
     end
+    
+    -- Update last save time so we can detect reloads
+    addon.charDB.session.lastSaveTime = time()
+    
     addon:Debug("Saving data before logout")
 end
 
@@ -974,8 +1000,8 @@ function addon:CreateMainFrame()
     }
     
     -- Override slash command
-    local oldHandler = SlashCmdList["FARMER"]
-    SlashCmdList["FARMER"] = function(msg)
+    local oldHandler = SlashCmdList["LOOTSESH"]
+    SlashCmdList["LOOTSESH"] = function(msg)
         local cmd = msg:match("^(%S*)"):lower()
         if cmd == "show" or cmd == "toggle" or cmd == "" then
             if cmd == "" then

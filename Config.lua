@@ -41,6 +41,7 @@ local defaults = {
 local charDefaults = {
     session = {
         startTime = 0,
+        lastSaveTime = 0,  -- Used to detect UI reloads vs new sessions
         totalVendorValue = 0,
         totalAHValue = 0,
         itemsLooted = {},  -- [itemID] = { count, vendorValue, ahValue, name, quality }
@@ -113,6 +114,7 @@ end
 function addon:ResetSession()
     self.charDB.session = DeepCopy(charDefaults.session)
     self.charDB.session.startTime = time()
+    self.charDB.session.lastSaveTime = time()
     self:Print("Session data has been reset.")
 end
 
@@ -121,6 +123,7 @@ function addon:ResetCharData()
     LootSeshCharDB = DeepCopy(charDefaults)
     self.charDB = LootSeshCharDB
     self.charDB.session.startTime = time()
+    self.charDB.session.lastSaveTime = time()
     self:Print("All character data has been reset.")
 end
 
