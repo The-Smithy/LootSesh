@@ -90,7 +90,7 @@ function eventHandlers:PLAYER_LOGIN()
     if addon:GetSetting("features.showWelcome") then
         local ahStatus = addon.hasAuctionator and "|cff00ff00Auctionator detected|r" or "|cffff9900Auctionator not found (using vendor prices)|r"
         addon:Print("Loot tracking active! " .. ahStatus)
-        addon:Print("Type /farmer for commands.")
+        addon:Print("Type /lootsesh for commands.")
     end
     
     -- Initialize any UI elements here
@@ -945,18 +945,64 @@ function addon:CreateMainFrame()
     itemsHeader:SetFont(itemsHeader:GetFont(), 9)
     frame.itemsHeader = itemsHeader
     
-    -- Item count
+    -- Item count (anchored to header)
     local itemCountText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    itemCountText:SetPoint("LEFT", itemsHeader, "RIGHT", 6, 0)
+    itemCountText:SetPoint("LEFT", itemsHeader, "RIGHT", 4, 0)
     itemCountText:SetTextColor(theme.mutedColor.r - 0.1, theme.mutedColor.g - 0.1, theme.mutedColor.b - 0.1)
     itemCountText:SetText("(0)")
-    itemCountText:SetWidth(30)  -- Limit width to prevent overlap
     frame.itemCountText = itemCountText
     
-    -- Filter dropdown button
+    -- Controls row on the right side (anchored from right, relative to each other)
+    -- Order from right to left: [Sort Dir] [Sort Dropdown] [Filter Dropdown]
+    
+    -- Sort direction button (rightmost)
+    local sortDirBtn = CreateFrame("Button", nil, frame, "BackdropTemplate")
+    sortDirBtn:SetSize(20, 18)
+    sortDirBtn:SetPoint("TOPRIGHT", -10, -148)
+    sortDirBtn:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        tile = false,
+        edgeSize = 1,
+    })
+    sortDirBtn:SetBackdropColor(theme.dropdownBg.r, theme.dropdownBg.g, theme.dropdownBg.b, theme.dropdownBg.a)
+    sortDirBtn:SetBackdropBorderColor(theme.dropdownBorder.r, theme.dropdownBorder.g, theme.dropdownBorder.b, theme.dropdownBorder.a)
+    
+    local sortDirText = sortDirBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    sortDirText:SetPoint("CENTER", 0, 0)
+    sortDirText:SetText(addon.sortAscending and "^" or "v")
+    sortDirText:SetTextColor(theme.labelColor.r, theme.labelColor.g, theme.labelColor.b)
+    frame.sortDirText = sortDirText
+    frame.sortDirBtn = sortDirBtn
+    
+    sortDirBtn:SetScript("OnClick", function()
+        addon.sortAscending = not addon.sortAscending
+        addon:SetSetting("ui.sortAscending", addon.sortAscending)
+        sortDirText:SetText(addon.sortAscending and "^" or "v")
+        addon:UpdateItemList()
+    end)
+    sortDirBtn:SetScript("OnEnter", function(self)
+        local t = addon:GetCurrentTheme()
+        self:SetBackdropBorderColor(t.buttonHoverBorder.r, t.buttonHoverBorder.g, t.buttonHoverBorder.b, t.buttonHoverBorder.a)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(addon.sortAscending and "Ascending" or "Descending", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    sortDirBtn:SetScript("OnLeave", function(self)
+        local t = addon:GetCurrentTheme()
+        self:SetBackdropBorderColor(t.dropdownBorder.r, t.dropdownBorder.g, t.dropdownBorder.b, t.dropdownBorder.a)
+        GameTooltip:Hide()
+    end)
+    
+    -- Sort dropdown (anchored to left of sort direction button)
+    local sortDropdown = CreateSortDropdown(frame)
+    sortDropdown:SetPoint("RIGHT", sortDirBtn, "LEFT", -3, 0)
+    frame.sortDropdown = sortDropdown
+    
+    -- Filter dropdown button (anchored to left of sort dropdown)
     local filterBtn = CreateFrame("Button", nil, frame, "BackdropTemplate")
-    filterBtn:SetSize(55, 18)
-    filterBtn:SetPoint("LEFT", itemCountText, "RIGHT", 6, 0)
+    filterBtn:SetSize(50, 18)
+    filterBtn:SetPoint("RIGHT", sortDropdown, "LEFT", -3, 0)
     filterBtn:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -1167,56 +1213,6 @@ function addon:CreateMainFrame()
     -- Close menu when clicking outside
     filterMenu:SetScript("OnShow", function(self)
         self:SetPropagateKeyboardInput(true)
-    end)
-    
-    -- Sort controls
-    local sortLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    sortLabel:SetPoint("TOPRIGHT", -132, -150)
-    sortLabel:SetText("Sort:")
-    sortLabel:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b)
-    frame.sortLabel = sortLabel
-    
-    local sortDropdown = CreateSortDropdown(frame)
-    sortDropdown:SetPoint("TOPRIGHT", -36, -147)
-    frame.sortDropdown = sortDropdown
-    
-    -- Sort direction button
-    local sortDirBtn = CreateFrame("Button", nil, frame, "BackdropTemplate")
-    sortDirBtn:SetSize(22, 22)
-    sortDirBtn:SetPoint("TOPRIGHT", -10, -147)
-    sortDirBtn:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        tile = false,
-        edgeSize = 1,
-    })
-    sortDirBtn:SetBackdropColor(theme.dropdownBg.r, theme.dropdownBg.g, theme.dropdownBg.b, theme.dropdownBg.a)
-    sortDirBtn:SetBackdropBorderColor(theme.dropdownBorder.r, theme.dropdownBorder.g, theme.dropdownBorder.b, theme.dropdownBorder.a)
-    
-    local sortDirText = sortDirBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    sortDirText:SetPoint("CENTER", 0, 0)
-    sortDirText:SetText(addon.sortAscending and "^" or "v")
-    sortDirText:SetTextColor(theme.labelColor.r, theme.labelColor.g, theme.labelColor.b)
-    frame.sortDirText = sortDirText
-    frame.sortDirBtn = sortDirBtn
-    
-    sortDirBtn:SetScript("OnClick", function()
-        addon.sortAscending = not addon.sortAscending
-        addon:SetSetting("ui.sortAscending", addon.sortAscending)
-        sortDirText:SetText(addon.sortAscending and "^" or "v")
-        addon:UpdateItemList()
-    end)
-    sortDirBtn:SetScript("OnEnter", function(self)
-        local t = addon:GetCurrentTheme()
-        self:SetBackdropBorderColor(t.buttonHoverBorder.r, t.buttonHoverBorder.g, t.buttonHoverBorder.b, t.buttonHoverBorder.a)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(addon.sortAscending and "Ascending" or "Descending", 1, 1, 1)
-        GameTooltip:Show()
-    end)
-    sortDirBtn:SetScript("OnLeave", function(self)
-        local t = addon:GetCurrentTheme()
-        self:SetBackdropBorderColor(t.dropdownBorder.r, t.dropdownBorder.g, t.dropdownBorder.b, t.dropdownBorder.a)
-        GameTooltip:Hide()
     end)
     
     -- Column headers
