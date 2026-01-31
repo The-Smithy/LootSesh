@@ -36,6 +36,12 @@ local defaults = {
         useAHPrices = true,  -- Prefer AH prices over vendor when available
         showLootMessages = true,  -- Show chat messages when looting
     },
+    
+    -- Loot source filters
+    filters = {
+        showPickup = true,      -- Show items looted from mobs/containers
+        showGathered = true,    -- Show items from mining/herbalism/skinning
+    },
 }
 
 -- Per-character defaults (for loot tracking)
@@ -46,7 +52,7 @@ local charDefaults = {
         lastSaveTime = 0,  -- Used to detect UI reloads vs new sessions
         totalVendorValue = 0,
         totalAHValue = 0,
-        itemsLooted = {},  -- [itemID] = { count, vendorValue, ahValue, name, quality }
+        itemsLooted = {},  -- [itemID] = { count, vendorValue, ahValue, name, quality, lootSource }
         rawGoldLooted = 0,
     },
     sessionHistory = {},  -- Array of past sessions

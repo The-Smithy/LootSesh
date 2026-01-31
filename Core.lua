@@ -80,6 +80,9 @@ function addon:RegisterSlashCommands()
             self:Print("  /lootsesh reset all - Reset all character data")
             self:Print("  /lootsesh ah - Toggle AH/Vendor price preference")
             self:Print("  /lootsesh theme - Cycle through themes (Horde/Alliance/Dark)")
+            self:Print("  /lootsesh filter - Show current filter status")
+            self:Print("  /lootsesh filter pickup - Toggle pickup loot filter")
+            self:Print("  /lootsesh filter gathered - Toggle gathered loot filter")
             self:Print("  /lootsesh debug - Toggle debug mode")
         elseif cmd == "session" then
             local session = self.charDB.session
@@ -182,6 +185,29 @@ function addon:RegisterSlashCommands()
             self:CycleTheme()
             if self.mainFrame then
                 self:ApplyTheme()
+            end
+        elseif cmd == "filter" then
+            if args == "pickup" then
+                local current = self:GetSetting("filters.showPickup")
+                if current == nil then current = true end
+                self:SetSetting("filters.showPickup", not current)
+                self:Print("Pickup loot filter: " .. (not current and "|cff00ff00Shown|r" or "|cffff0000Hidden|r"))
+                self:UpdateMainFrame()
+            elseif args == "gathered" then
+                local current = self:GetSetting("filters.showGathered")
+                if current == nil then current = true end
+                self:SetSetting("filters.showGathered", not current)
+                self:Print("Gathered loot filter: " .. (not current and "|cff00ff00Shown|r" or "|cffff0000Hidden|r"))
+                self:UpdateMainFrame()
+            else
+                local showPickup = self:GetSetting("filters.showPickup")
+                local showGathered = self:GetSetting("filters.showGathered")
+                if showPickup == nil then showPickup = true end
+                if showGathered == nil then showGathered = true end
+                self:Print("Current filters:")
+                self:Print("  Pickup loot: " .. (showPickup and "|cff00ff00Shown|r" or "|cffff0000Hidden|r"))
+                self:Print("  Gathered loot: " .. (showGathered and "|cff00ff00Shown|r" or "|cffff0000Hidden|r"))
+                self:Print("Use /lootsesh filter pickup|gathered to toggle")
             end
         elseif cmd == "reset" then
             if args == "session" then

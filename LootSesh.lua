@@ -19,6 +19,12 @@ local events = {
     "PLAYER_ENTERING_WORLD",
     "CHAT_MSG_LOOT",
     "CHAT_MSG_MONEY",
+    "UNIT_SPELLCAST_SENT",
+    "UNIT_SPELLCAST_SUCCEEDED",
+    "UNIT_SPELLCAST_FAILED",
+    "UNIT_SPELLCAST_INTERRUPTED",
+    "LOOT_OPENED",
+    "LOOT_CLOSED",
 }
 
 -- Register all events
@@ -119,6 +125,122 @@ function eventHandlers:PLAYER_ENTERING_WORLD(isLogin, isReload)
     end
 end
 
+-- Gathering spell IDs and names for detection
+local gatheringSpells = {
+    -- Mining
+    [2575] = "gathering",   -- Mining (Apprentice)
+    [2576] = "gathering",   -- Mining (Journeyman)
+    [3564] = "gathering",   -- Mining (Expert)
+    [10248] = "gathering",  -- Mining (Artisan)
+    [29354] = "gathering",  -- Mining (Master)
+    [50310] = "gathering",  -- Mining (Grand Master)
+    [74517] = "gathering",  -- Mining (Illustrious)
+    [102161] = "gathering", -- Mining (Zen Master)
+    [158754] = "gathering", -- Mining (Draenor)
+    [195122] = "gathering", -- Mining (Legion)
+    [253337] = "gathering", -- Mining (Kul Tiran/Zandalari)
+    [366260] = "gathering", -- Mining (Dragon Isles)
+    -- Herbalism
+    [2366] = "gathering",   -- Herb Gathering (Apprentice)
+    [2368] = "gathering",   -- Herb Gathering (Journeyman)
+    [3570] = "gathering",   -- Herb Gathering (Expert)
+    [11993] = "gathering",  -- Herb Gathering (Artisan)
+    [28695] = "gathering",  -- Herb Gathering (Master)
+    [50300] = "gathering",  -- Herb Gathering (Grand Master)
+    [74519] = "gathering",  -- Herb Gathering (Illustrious)
+    [110413] = "gathering", -- Herb Gathering (Zen Master)
+    [158756] = "gathering", -- Herb Gathering (Draenor)
+    [195114] = "gathering", -- Herb Gathering (Legion)
+    [253340] = "gathering", -- Herb Gathering (Kul Tiran/Zandalari)
+    [366252] = "gathering", -- Herb Gathering (Dragon Isles)
+    -- Skinning
+    [8613] = "gathering",   -- Skinning (Apprentice)
+    [8617] = "gathering",   -- Skinning (Journeyman)
+    [8618] = "gathering",   -- Skinning (Expert)
+    [10768] = "gathering",  -- Skinning (Artisan)
+    [32678] = "gathering",  -- Skinning (Master)
+    [50305] = "gathering",  -- Skinning (Grand Master)
+    [74522] = "gathering",  -- Skinning (Illustrious)
+    [102216] = "gathering", -- Skinning (Zen Master)
+    [158758] = "gathering", -- Skinning (Draenor)
+    [195125] = "gathering", -- Skinning (Legion)
+    [253343] = "gathering", -- Skinning (Kul Tiran/Zandalari)
+    [366264] = "gathering", -- Skinning (Dragon Isles)
+}
+
+-- Gathering spell names (fallback for localization)
+local gatheringSpellNames = {
+    ["Mining"] = true,
+    ["Herb Gathering"] = true,
+    ["Skinning"] = true,
+    ["Smelting"] = false,  -- Not gathering
+}
+
+-- Track current loot source
+addon.currentLootSource = "pickup"  -- "pickup" or "gathered"
+addon.lastGatheringTime = 0
+local GATHERING_TIMEOUT = 5  -- seconds to consider loot as gathered after casting
+
+-- UNIT_SPELLCAST_SENT: Detect when player starts casting a gathering spell
+function eventHandlers:UNIT_SPELLCAST_SENT(unit, target, castGUID, spellID)
+    if unit ~= "player" then return end
+    
+    if gatheringSpells[spellID] then
+        addon.currentLootSource = "gathered"
+        addon.lastGatheringTime = GetTime()
+        addon:Debug("Gathering spell detected: " .. (GetSpellInfo(spellID) or spellID))
+    end
+end
+
+-- UNIT_SPELLCAST_SUCCEEDED: Confirm gathering spell completed
+function eventHandlers:UNIT_SPELLCAST_SUCCEEDED(unit, castGUID, spellID)
+    if unit ~= "player" then return end
+    
+    if gatheringSpells[spellID] then
+        addon.currentLootSource = "gathered"
+        addon.lastGatheringTime = GetTime()
+        addon:Debug("Gathering spell succeeded")
+    end
+end
+
+-- UNIT_SPELLCAST_FAILED/INTERRUPTED: Reset if gathering was cancelled
+function eventHandlers:UNIT_SPELLCAST_FAILED(unit, castGUID, spellID)
+    if unit ~= "player" then return end
+    
+    if gatheringSpells[spellID] then
+        -- Only reset if no recent successful gathering
+        if GetTime() - addon.lastGatheringTime > GATHERING_TIMEOUT then
+            addon.currentLootSource = "pickup"
+        end
+    end
+end
+
+function eventHandlers:UNIT_SPELLCAST_INTERRUPTED(unit, castGUID, spellID)
+    eventHandlers:UNIT_SPELLCAST_FAILED(unit, castGUID, spellID)
+end
+
+-- LOOT_OPENED: Loot window opened - check if this is from gathering
+function eventHandlers:LOOT_OPENED(autoLoot)
+    -- Check if we recently cast a gathering spell
+    if GetTime() - addon.lastGatheringTime <= GATHERING_TIMEOUT then
+        addon.currentLootSource = "gathered"
+        addon:Debug("Loot window opened - source: gathered")
+    else
+        addon.currentLootSource = "pickup"
+        addon:Debug("Loot window opened - source: pickup")
+    end
+end
+
+-- LOOT_CLOSED: Reset loot source after a short delay
+function eventHandlers:LOOT_CLOSED()
+    -- Keep the source for items being processed, reset after delay
+    C_Timer.After(0.5, function()
+        if GetTime() - addon.lastGatheringTime > GATHERING_TIMEOUT then
+            addon.currentLootSource = "pickup"
+        end
+    end)
+end
+
 -- CHAT_MSG_LOOT: Fires when items are looted
 function eventHandlers:CHAT_MSG_LOOT(msg)
     -- Check if this is the player's loot
@@ -211,14 +333,49 @@ function addon:ProcessLootedItem(itemLink, count)
     
     count = count or 1
     
+    -- Determine loot source
+    local lootSource = self.currentLootSource or "pickup"
+    
     -- Get item info
-    local itemName, _, itemQuality, _, _, _, _, _, _, itemTexture, vendorPrice, _, _, _, _, _, _ = GetItemInfo(itemLink)
+    local itemName, _, itemQuality, _, _, itemType, itemSubType, _, _, itemTexture, vendorPrice, _, _, _, _, _, _ = GetItemInfo(itemLink)
     local itemID = GetItemInfoInstant(itemLink)
     
     if not itemID then
         self:Debug("Could not get itemID for: " .. tostring(itemLink))
         return
     end
+    
+    -- Additional heuristic: Check item type for gathering materials
+    -- Trade Goods that are commonly gathered
+    if itemType == "Tradeskill" or itemType == "Trade Goods" then
+        -- Check subtype for gathering materials
+        local gatheringSubTypes = {
+            ["Metal & Stone"] = true,
+            ["Herb"] = true,
+            ["Leather"] = true,
+            ["Cloth"] = false,  -- Cloth is looted, not gathered
+            ["Elemental"] = true,
+            ["Ore"] = true,
+            ["Herbalism"] = true,
+            ["Mining"] = true,
+            ["Skinning"] = true,
+        }
+        -- If we recently gathered and this is a gathering material, confirm source
+        if gatheringSubTypes[itemSubType] and GetTime() - self.lastGatheringTime <= 5 then
+            lootSource = "gathered"
+        end
+    end
+    
+    -- Check filter settings - skip item if filtered out
+    local showPickup = self:GetSetting("filters.showPickup")
+    local showGathered = self:GetSetting("filters.showGathered")
+    
+    -- Default to true if setting doesn't exist
+    if showPickup == nil then showPickup = true end
+    if showGathered == nil then showGathered = true end
+    
+    -- Skip if this source type is filtered out (but still track for totals)
+    local shouldDisplay = (lootSource == "pickup" and showPickup) or (lootSource == "gathered" and showGathered)
     
     -- Get vendor price (per item)
     vendorPrice = vendorPrice or 0
@@ -244,6 +401,7 @@ function addon:ProcessLootedItem(itemLink, count)
             quality = itemQuality or 1,
             link = itemLink,
             texture = itemTexture,
+            lootSource = lootSource,  -- Track source type
         }
     end
     
@@ -251,6 +409,10 @@ function addon:ProcessLootedItem(itemLink, count)
     itemData.count = itemData.count + count
     itemData.vendorValue = itemData.vendorValue + totalVendorValue
     itemData.ahValue = itemData.ahValue + totalAHValue
+    -- Update source if this is a new source type (item can come from both)
+    if itemData.lootSource ~= lootSource then
+        itemData.lootSource = "both"
+    end
     
     -- Update lifetime data
     local lifetime = self.charDB.lifetime
@@ -268,7 +430,8 @@ function addon:ProcessLootedItem(itemLink, count)
         else
             valueStr = "No value"
         end
-        self:Debug(string.format("Looted %dx %s - %s", count, itemLink, valueStr))
+        local sourceStr = lootSource == "gathered" and " [Gathered]" or " [Pickup]"
+        self:Debug(string.format("Looted %dx %s - %s%s", count, itemLink, valueStr, sourceStr))
     end
     
     -- Update UI
@@ -787,8 +950,223 @@ function addon:CreateMainFrame()
     itemCountText:SetPoint("LEFT", itemsHeader, "RIGHT", 6, 0)
     itemCountText:SetTextColor(theme.mutedColor.r - 0.1, theme.mutedColor.g - 0.1, theme.mutedColor.b - 0.1)
     itemCountText:SetText("(0)")
-    itemCountText:SetWidth(40)  -- Limit width to prevent overlap
+    itemCountText:SetWidth(30)  -- Limit width to prevent overlap
     frame.itemCountText = itemCountText
+    
+    -- Filter dropdown button
+    local filterBtn = CreateFrame("Button", nil, frame, "BackdropTemplate")
+    filterBtn:SetSize(55, 18)
+    filterBtn:SetPoint("LEFT", itemCountText, "RIGHT", 6, 0)
+    filterBtn:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        tile = false,
+        edgeSize = 1,
+    })
+    filterBtn:SetBackdropColor(theme.dropdownBg.r, theme.dropdownBg.g, theme.dropdownBg.b, theme.dropdownBg.a)
+    filterBtn:SetBackdropBorderColor(theme.dropdownBorder.r, theme.dropdownBorder.g, theme.dropdownBorder.b, theme.dropdownBorder.a)
+    
+    local filterBtnText = filterBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    filterBtnText:SetPoint("LEFT", 6, 0)
+    filterBtnText:SetText("Filter")
+    filterBtnText:SetTextColor(theme.valueColor.r, theme.valueColor.g, theme.valueColor.b)
+    filterBtn.text = filterBtnText
+    
+    local filterArrow = filterBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    filterArrow:SetPoint("RIGHT", -4, 0)
+    filterArrow:SetText("▼")
+    filterArrow:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b)
+    filterBtn.arrow = filterArrow
+    
+    frame.filterBtn = filterBtn
+    
+    -- Filter dropdown menu
+    local filterMenu = CreateFrame("Frame", "FarmerFilterMenu", filterBtn, "BackdropTemplate")
+    filterMenu:SetPoint("TOP", filterBtn, "BOTTOM", 0, -2)
+    filterMenu:SetSize(160, 90)
+    filterMenu:SetFrameStrata("DIALOG")
+    filterMenu:Hide()
+    
+    filterMenu:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        tile = false,
+        edgeSize = 1,
+    })
+    filterMenu:SetBackdropColor(theme.dropdownMenuBg.r, theme.dropdownMenuBg.g, theme.dropdownMenuBg.b, theme.dropdownMenuBg.a)
+    filterMenu:SetBackdropBorderColor(theme.dropdownBorder.r, theme.dropdownBorder.g, theme.dropdownBorder.b, theme.dropdownBorder.a)
+    
+    frame.filterMenu = filterMenu
+    
+    -- Helper function to create checkbox items
+    local function CreateFilterCheckbox(parent, label, filterKey, yOffset, icon)
+        local checkFrame = CreateFrame("Button", nil, parent)
+        checkFrame:SetSize(150, 18)
+        checkFrame:SetPoint("TOPLEFT", 5, yOffset)
+        checkFrame.filterKey = filterKey
+        
+        -- Checkbox box
+        local checkbox = checkFrame:CreateTexture(nil, "ARTWORK")
+        checkbox:SetSize(12, 12)
+        checkbox:SetPoint("LEFT", 2, 0)
+        checkbox:SetColorTexture(theme.buttonBg.r, theme.buttonBg.g, theme.buttonBg.b, 1)
+        checkFrame.checkbox = checkbox
+        
+        -- Checkbox border
+        local checkBorder = checkFrame:CreateTexture(nil, "BORDER")
+        checkBorder:SetSize(14, 14)
+        checkBorder:SetPoint("CENTER", checkbox, "CENTER", 0, 0)
+        checkBorder:SetColorTexture(theme.buttonBorder.r, theme.buttonBorder.g, theme.buttonBorder.b, 1)
+        checkFrame.checkBorder = checkBorder
+        
+        -- Checkmark
+        local checkmark = checkFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        checkmark:SetPoint("CENTER", checkbox, "CENTER", 0, 0)
+        checkmark:SetText("✓")
+        checkmark:SetTextColor(0.2, 1, 0.2)
+        checkFrame.checkmark = checkmark
+        
+        -- Icon (optional)
+        local iconText = checkFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        iconText:SetPoint("LEFT", checkbox, "RIGHT", 6, 0)
+        iconText:SetText(icon or "")
+        iconText:SetTextColor(theme.labelColor.r, theme.labelColor.g, theme.labelColor.b)
+        checkFrame.icon = iconText
+        
+        -- Label
+        local labelText = checkFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        labelText:SetPoint("LEFT", iconText, "RIGHT", 4, 0)
+        labelText:SetText(label)
+        labelText:SetTextColor(theme.labelColor.r, theme.labelColor.g, theme.labelColor.b)
+        checkFrame.label = labelText
+        
+        -- Highlight
+        local highlight = checkFrame:CreateTexture(nil, "HIGHLIGHT")
+        highlight:SetAllPoints()
+        highlight:SetColorTexture(theme.dropdownHighlight.r, theme.dropdownHighlight.g, theme.dropdownHighlight.b, theme.dropdownHighlight.a)
+        
+        -- Update visual state
+        local function UpdateCheckState()
+            local enabled = addon:GetSetting("filters." .. filterKey)
+            if enabled == nil then enabled = true end
+            checkFrame.checkmark:SetShown(enabled)
+        end
+        checkFrame.UpdateCheckState = UpdateCheckState
+        UpdateCheckState()
+        
+        -- Click handler
+        checkFrame:SetScript("OnClick", function(self)
+            local current = addon:GetSetting("filters." .. self.filterKey)
+            if current == nil then current = true end
+            addon:SetSetting("filters." .. self.filterKey, not current)
+            UpdateCheckState()
+            addon:UpdateFilterDropdown()
+            addon:UpdateMainFrame()
+        end)
+        
+        return checkFrame
+    end
+    
+    -- Helper function to create section headers
+    local function CreateSectionHeader(parent, text, yOffset)
+        local header = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        header:SetPoint("TOPLEFT", 8, yOffset)
+        header:SetText(text)
+        header:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b)
+        header:SetFont(header:GetFont(), 8, "OUTLINE")
+        return header
+    end
+    
+    -- Source filters header
+    local sourceHeader = CreateSectionHeader(filterMenu, "LOOT SOURCE", -6)
+    filterMenu.sourceHeader = sourceHeader
+    
+    -- Separator line after header
+    local headerLine = filterMenu:CreateTexture(nil, "ARTWORK")
+    headerLine:SetHeight(1)
+    headerLine:SetPoint("TOPLEFT", 6, -18)
+    headerLine:SetPoint("TOPRIGHT", -6, -18)
+    headerLine:SetColorTexture(theme.separator.r, theme.separator.g, theme.separator.b, theme.separator.a)
+    filterMenu.headerLine = headerLine
+    
+    -- Pickup checkbox
+    local pickupCheck = CreateFilterCheckbox(filterMenu, "Pickup (mobs/chests)", "showPickup", -24, "⚔")
+    filterMenu.pickupCheck = pickupCheck
+    
+    -- Gathered checkbox
+    local gatheredCheck = CreateFilterCheckbox(filterMenu, "Gathered (nodes)", "showGathered", -44, "⛏")
+    filterMenu.gatheredCheck = gatheredCheck
+    
+    -- Separator before quick actions
+    local actionLine = filterMenu:CreateTexture(nil, "ARTWORK")
+    actionLine:SetHeight(1)
+    actionLine:SetPoint("TOPLEFT", 6, -66)
+    actionLine:SetPoint("TOPRIGHT", -6, -66)
+    actionLine:SetColorTexture(theme.separator.r, theme.separator.g, theme.separator.b, theme.separator.a)
+    filterMenu.actionLine = actionLine
+    
+    -- Show All / Hide All buttons
+    local showAllBtn = CreateFrame("Button", nil, filterMenu)
+    showAllBtn:SetSize(70, 16)
+    showAllBtn:SetPoint("TOPLEFT", 6, -72)
+    local showAllText = showAllBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    showAllText:SetPoint("LEFT", 2, 0)
+    showAllText:SetText("Show All")
+    showAllText:SetTextColor(0.4, 0.8, 0.4)
+    local showAllHighlight = showAllBtn:CreateTexture(nil, "HIGHLIGHT")
+    showAllHighlight:SetAllPoints()
+    showAllHighlight:SetColorTexture(theme.dropdownHighlight.r, theme.dropdownHighlight.g, theme.dropdownHighlight.b, theme.dropdownHighlight.a)
+    showAllBtn:SetScript("OnClick", function()
+        addon:SetSetting("filters.showPickup", true)
+        addon:SetSetting("filters.showGathered", true)
+        pickupCheck:UpdateCheckState()
+        gatheredCheck:UpdateCheckState()
+        addon:UpdateFilterDropdown()
+        addon:UpdateMainFrame()
+    end)
+    
+    local hideAllBtn = CreateFrame("Button", nil, filterMenu)
+    hideAllBtn:SetSize(70, 16)
+    hideAllBtn:SetPoint("TOPRIGHT", -6, -72)
+    local hideAllText = hideAllBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    hideAllText:SetPoint("RIGHT", -2, 0)
+    hideAllText:SetText("Hide All")
+    hideAllText:SetTextColor(0.8, 0.4, 0.4)
+    local hideAllHighlight = hideAllBtn:CreateTexture(nil, "HIGHLIGHT")
+    hideAllHighlight:SetAllPoints()
+    hideAllHighlight:SetColorTexture(theme.dropdownHighlight.r, theme.dropdownHighlight.g, theme.dropdownHighlight.b, theme.dropdownHighlight.a)
+    hideAllBtn:SetScript("OnClick", function()
+        addon:SetSetting("filters.showPickup", false)
+        addon:SetSetting("filters.showGathered", false)
+        pickupCheck:UpdateCheckState()
+        gatheredCheck:UpdateCheckState()
+        addon:UpdateFilterDropdown()
+        addon:UpdateMainFrame()
+    end)
+    
+    -- Toggle menu visibility
+    filterBtn:SetScript("OnClick", function()
+        if filterMenu:IsShown() then
+            filterMenu:Hide()
+        else
+            filterMenu:Show()
+        end
+    end)
+    
+    filterBtn:SetScript("OnEnter", function(self)
+        local t = addon:GetCurrentTheme()
+        self:SetBackdropBorderColor(t.buttonHoverBorder.r, t.buttonHoverBorder.g, t.buttonHoverBorder.b, t.buttonHoverBorder.a)
+    end)
+    
+    filterBtn:SetScript("OnLeave", function(self)
+        local t = addon:GetCurrentTheme()
+        self:SetBackdropBorderColor(t.dropdownBorder.r, t.dropdownBorder.g, t.dropdownBorder.b, t.dropdownBorder.a)
+    end)
+    
+    -- Close menu when clicking outside
+    filterMenu:SetScript("OnShow", function(self)
+        self:SetPropagateKeyboardInput(true)
+    end)
     
     -- Sort controls
     local sortLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -1115,6 +1493,53 @@ function addon:ShowLifetimePopup()
     message(msg)
 end
 
+-- Update filter dropdown visual states
+function addon:UpdateFilterDropdown()
+    local frame = self.mainFrame
+    if not frame or not frame.filterBtn then return end
+    
+    local theme = self:GetCurrentTheme()
+    
+    -- Count active filters
+    local showPickup = self:GetSetting("filters.showPickup")
+    local showGathered = self:GetSetting("filters.showGathered")
+    if showPickup == nil then showPickup = true end
+    if showGathered == nil then showGathered = true end
+    
+    local activeCount = 0
+    if showPickup then activeCount = activeCount + 1 end
+    if showGathered then activeCount = activeCount + 1 end
+    
+    -- Update button text to show filter status
+    local filterText = "Filter"
+    if activeCount == 0 then
+        filterText = "Filter (0)"
+        frame.filterBtn.text:SetTextColor(0.8, 0.4, 0.4)
+    elseif activeCount < 2 then
+        filterText = "Filter (" .. activeCount .. ")"
+        frame.filterBtn.text:SetTextColor(theme.valueColor.r, theme.valueColor.g, theme.valueColor.b)
+    else
+        filterText = "Filter"
+        frame.filterBtn.text:SetTextColor(theme.valueColor.r, theme.valueColor.g, theme.valueColor.b)
+    end
+    frame.filterBtn.text:SetText(filterText)
+    
+    -- Update checkbox states if menu exists
+    if frame.filterMenu then
+        if frame.filterMenu.pickupCheck and frame.filterMenu.pickupCheck.UpdateCheckState then
+            frame.filterMenu.pickupCheck:UpdateCheckState()
+        end
+        if frame.filterMenu.gatheredCheck and frame.filterMenu.gatheredCheck.UpdateCheckState then
+            frame.filterMenu.gatheredCheck:UpdateCheckState()
+        end
+    end
+end
+
+-- Legacy function for compatibility
+function addon:UpdateFilterButtons()
+    self:UpdateFilterDropdown()
+end
+
 -- Apply theme to all UI elements
 function addon:ApplyTheme()
     local frame = self.mainFrame
@@ -1175,6 +1600,29 @@ function addon:ApplyTheme()
     if frame.itemCountText then frame.itemCountText:SetTextColor(theme.mutedColor.r - 0.1, theme.mutedColor.g - 0.1, theme.mutedColor.b - 0.1) end
     if frame.sortLabel then frame.sortLabel:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b) end
     
+    -- Filter dropdown
+    if frame.filterBtn then
+        frame.filterBtn:SetBackdropColor(theme.dropdownBg.r, theme.dropdownBg.g, theme.dropdownBg.b, theme.dropdownBg.a)
+        frame.filterBtn:SetBackdropBorderColor(theme.dropdownBorder.r, theme.dropdownBorder.g, theme.dropdownBorder.b, theme.dropdownBorder.a)
+        if frame.filterBtn.arrow then
+            frame.filterBtn.arrow:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b)
+        end
+    end
+    if frame.filterMenu then
+        frame.filterMenu:SetBackdropColor(theme.dropdownMenuBg.r, theme.dropdownMenuBg.g, theme.dropdownMenuBg.b, theme.dropdownMenuBg.a)
+        frame.filterMenu:SetBackdropBorderColor(theme.dropdownBorder.r, theme.dropdownBorder.g, theme.dropdownBorder.b, theme.dropdownBorder.a)
+        if frame.filterMenu.sourceHeader then
+            frame.filterMenu.sourceHeader:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b)
+        end
+        if frame.filterMenu.headerLine then
+            frame.filterMenu.headerLine:SetColorTexture(theme.separator.r, theme.separator.g, theme.separator.b, theme.separator.a)
+        end
+        if frame.filterMenu.actionLine then
+            frame.filterMenu.actionLine:SetColorTexture(theme.separator.r, theme.separator.g, theme.separator.b, theme.separator.a)
+        end
+    end
+    self:UpdateFilterDropdown()
+    
     -- Sort dropdown
     if frame.sortDropdown then
         frame.sortDropdown:SetBackdropColor(theme.dropdownBg.r, theme.dropdownBg.g, theme.dropdownBg.b, theme.dropdownBg.a)
@@ -1231,20 +1679,45 @@ function addon:GetSortedItems()
     local useAH = self:GetSetting("features.useAHPrices")
     local items = {}
     
-    -- Convert to array for sorting
+    -- Get filter settings
+    local showPickup = self:GetSetting("filters.showPickup")
+    local showGathered = self:GetSetting("filters.showGathered")
+    
+    -- Default to true if setting doesn't exist
+    if showPickup == nil then showPickup = true end
+    if showGathered == nil then showGathered = true end
+    
+    -- Convert to array for sorting, applying filters
     local itemOrder = 0
     for itemID, data in pairs(session.itemsLooted) do
         itemOrder = itemOrder + 1
-        table.insert(items, {
-            id = itemID,
-            name = data.name,
-            count = data.count,
-            quality = data.quality or 1,
-            link = data.link,
-            texture = data.texture,
-            value = useAH and data.ahValue or data.vendorValue,
-            order = itemOrder,  -- Track insertion order for "recent" sorting
-        })
+        
+        -- Apply source filter
+        local lootSource = data.lootSource or "pickup"
+        local shouldShow = false
+        
+        if lootSource == "both" then
+            -- Item came from both sources, show if either filter is enabled
+            shouldShow = showPickup or showGathered
+        elseif lootSource == "gathered" then
+            shouldShow = showGathered
+        else  -- "pickup"
+            shouldShow = showPickup
+        end
+        
+        if shouldShow then
+            table.insert(items, {
+                id = itemID,
+                name = data.name,
+                count = data.count,
+                quality = data.quality or 1,
+                link = data.link,
+                texture = data.texture,
+                value = useAH and data.ahValue or data.vendorValue,
+                order = itemOrder,  -- Track insertion order for "recent" sorting
+                lootSource = lootSource,
+            })
+        end
     end
     
     -- Sort based on current mode
