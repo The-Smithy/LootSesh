@@ -89,7 +89,7 @@ addon.themes = {
         headerGradient = { r = 0.6, g = 0.15, b = 0.15, a = 0.2 },
         -- Title color (hex for text)
         titleColor = "|cffcc3333",
-        titleText = "FARMER",
+        titleText = "LOOT SESH",
         -- Section background
         sectionBg = { r = 0.15, g = 0.08, b = 0.08, a = 0.5 },
         -- Separator line
@@ -129,7 +129,7 @@ addon.themes = {
         headerGradient = { r = 0.15, g = 0.3, b = 0.6, a = 0.2 },
         -- Title color (hex for text)
         titleColor = "|cff3399ff",
-        titleText = "FARMER",
+        titleText = "LOOT SESH",
         -- Section background
         sectionBg = { r = 0.06, g = 0.1, b = 0.18, a = 0.5 },
         -- Separator line
@@ -169,7 +169,7 @@ addon.themes = {
         headerGradient = { r = 0.2, g = 0.2, b = 0.25, a = 0.15 },
         -- Title color (hex for text)
         titleColor = "|cff9999aa",
-        titleText = "FARMER",
+        titleText = "LOOT SESH",
         -- Section background
         sectionBg = { r = 0.1, g = 0.1, b = 0.12, a = 0.5 },
         -- Separator line
