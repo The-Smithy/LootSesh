@@ -535,23 +535,25 @@ addon.sortModes = {
 addon.currentSortMode = "value"
 addon.sortAscending = false
 
--- Create a styled backdrop (theme-aware)
+-- Create a styled backdrop (theme-aware) - Modern clean look
 local function CreateStyledBackdrop(frame, alpha, isSection)
     local theme = addon:GetCurrentTheme()
     alpha = alpha or 0.9
+    
+    -- Use softer edge for modern look
     frame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         tile = false,
         tileSize = 0,
         edgeSize = 1,
-        insets = { left = 0, right = 0, top = 0, bottom = 0 }
+        insets = { left = 1, right = 1, top = 1, bottom = 1 }
     })
     
     local bg = isSection and theme.sectionBg or theme.background
-    local border = theme.border
-    frame:SetBackdropColor(bg.r, bg.g, bg.b, alpha)
-    frame:SetBackdropBorderColor(border.r, border.g, border.b, border.a)
+    local border = isSection and (theme.sectionBorder or theme.border) or theme.border
+    frame:SetBackdropColor(bg.r, bg.g, bg.b, isSection and bg.a or alpha)
+    frame:SetBackdropBorderColor(border.r, border.g, border.b, border.a or 0.6)
 end
 
 -- Create a highlight backdrop
@@ -564,68 +566,72 @@ local function CreateHighlightBackdrop(frame)
     frame:SetBackdropColor(1, 1, 1, 0.05)
 end
 
--- Create a separator line (theme-aware)
+-- Create a separator line (theme-aware) - Subtle modern style
 local function CreateSeparator(parent, yOffset)
     local theme = addon:GetCurrentTheme()
     local line = parent:CreateTexture(nil, "ARTWORK")
     line:SetHeight(1)
-    line:SetPoint("LEFT", 12, 0)
-    line:SetPoint("RIGHT", -12, 0)
+    line:SetPoint("LEFT", 14, 0)
+    line:SetPoint("RIGHT", -14, 0)
     line:SetPoint("TOP", 0, yOffset)
     line:SetColorTexture(theme.separator.r, theme.separator.g, theme.separator.b, theme.separator.a)
     return line
 end
 
--- Create a stat row (theme-aware)
+-- Create a stat row (theme-aware) - Clean typography
 local function CreateStatRow(parent, label, yOffset)
     local theme = addon:GetCurrentTheme()
     local labelText = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     labelText:SetPoint("TOPLEFT", 14, yOffset)
     labelText:SetTextColor(theme.labelColor.r, theme.labelColor.g, theme.labelColor.b)
     labelText:SetText(label)
+    labelText:SetFont(labelText:GetFont(), 10)
     
     local valueText = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     valueText:SetPoint("TOPRIGHT", -14, yOffset)
     valueText:SetTextColor(theme.valueColor.r, theme.valueColor.g, theme.valueColor.b)
     valueText:SetJustifyH("RIGHT")
+    valueText:SetFont(valueText:GetFont(), 10)
     
     return labelText, valueText
 end
 
--- Create custom close button
+-- Create custom close button - Modern minimal style
 local function CreateCloseButton(parent)
-    local btn = CreateFrame("Button", nil, parent)
-    btn:SetSize(16, 16)
+    local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    btn:SetSize(18, 18)
     btn:SetPoint("TOPRIGHT", -8, -8)
     
-    local tex = btn:CreateTexture(nil, "ARTWORK")
-    tex:SetAllPoints()
-    tex:SetTexture("Interface\\Buttons\\UI-StopButton")
-    tex:SetVertexColor(0.7, 0.7, 0.7)
-    btn.tex = tex
+    -- Create X with font string for clean look
+    local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    text:SetPoint("CENTER", 0, 0)
+    text:SetText("×")
+    text:SetFont(text:GetFont(), 16, "")
+    text:SetTextColor(0.5, 0.5, 0.5)
+    btn.text = text
     
     btn:SetScript("OnEnter", function(self)
-        self.tex:SetVertexColor(1, 0.3, 0.3)
+        self.text:SetTextColor(1, 0.4, 0.4)
     end)
     btn:SetScript("OnLeave", function(self)
-        self.tex:SetVertexColor(0.7, 0.7, 0.7)
+        self.text:SetTextColor(0.5, 0.5, 0.5)
     end)
     
     return btn
 end
 
--- Create styled button (theme-aware)
+-- Create styled button (theme-aware) - Modern flat design
 local function CreateStyledButton(parent, text, width, height)
     local theme = addon:GetCurrentTheme()
     local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    btn:SetSize(width or 70, height or 20)
+    btn:SetSize(width or 70, height or 22)
     
     btn:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         tile = false,
         edgeSize = 1,
-        insets = { left = 0, right = 0, top = 0, bottom = 0 }
+        insets = { left = 1, right = 1, top = 1, bottom = 1 }
     })
     btn:SetBackdropColor(theme.buttonBg.r, theme.buttonBg.g, theme.buttonBg.b, theme.buttonBg.a)
     btn:SetBackdropBorderColor(theme.buttonBorder.r, theme.buttonBorder.g, theme.buttonBorder.b, theme.buttonBorder.a)
@@ -633,7 +639,9 @@ local function CreateStyledButton(parent, text, width, height)
     local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     label:SetPoint("CENTER", 0, 0)
     label:SetText(text)
-    label:SetTextColor(theme.valueColor.r, theme.valueColor.g, theme.valueColor.b)
+    local textColor = theme.buttonText or theme.valueColor
+    label:SetTextColor(textColor.r, textColor.g, textColor.b)
+    label:SetFont(label:GetFont(), 10)
     btn.label = label
     
     btn:SetScript("OnEnter", function(self)
@@ -650,25 +658,26 @@ local function CreateStyledButton(parent, text, width, height)
     return btn
 end
 
--- Create dropdown menu for sorting (theme-aware)
+-- Create dropdown menu for sorting (theme-aware) - Modern clean style
 local function CreateSortDropdown(parent)
     local theme = addon:GetCurrentTheme()
     local dropdown = CreateFrame("Frame", "FarmerSortDropdown", parent, "BackdropTemplate")
-    dropdown:SetSize(90, 22)
+    dropdown:SetSize(90, 24)
     
     dropdown:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         tile = false,
         edgeSize = 1,
-        insets = { left = 0, right = 0, top = 0, bottom = 0 }
+        insets = { left = 1, right = 1, top = 1, bottom = 1 }
     })
     dropdown:SetBackdropColor(theme.dropdownBg.r, theme.dropdownBg.g, theme.dropdownBg.b, theme.dropdownBg.a)
     dropdown:SetBackdropBorderColor(theme.dropdownBorder.r, theme.dropdownBorder.g, theme.dropdownBorder.b, theme.dropdownBorder.a)
     
     local text = dropdown:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    text:SetPoint("LEFT", 8, 0)
+    text:SetPoint("LEFT", 10, 0)
     text:SetTextColor(theme.valueColor.r, theme.valueColor.g, theme.valueColor.b)
+    text:SetFont(text:GetFont(), 10)
     -- Set initial text based on current sort mode
     local sortModeName = "Value"
     for _, mode in ipairs(addon.sortModes) do
@@ -681,8 +690,9 @@ local function CreateSortDropdown(parent)
     dropdown.text = text
     
     local arrow = dropdown:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    arrow:SetPoint("RIGHT", -6, 0)
-    arrow:SetText("v")
+    arrow:SetPoint("RIGHT", -8, 0)
+    arrow:SetText("▾")
+    arrow:SetFont(arrow:GetFont(), 9)
     arrow:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b)
     
     -- Dropdown menu frame
@@ -697,7 +707,7 @@ local function CreateSortDropdown(parent)
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         tile = false,
         edgeSize = 1,
-        insets = { left = 0, right = 0, top = 0, bottom = 0 }
+        insets = { left = 1, right = 1, top = 1, bottom = 1 }
     })
     menu:SetBackdropColor(theme.dropdownMenuBg.r, theme.dropdownMenuBg.g, theme.dropdownMenuBg.b, theme.dropdownMenuBg.a)
     menu:SetBackdropBorderColor(theme.dropdownBorder.r, theme.dropdownBorder.g, theme.dropdownBorder.b, theme.dropdownBorder.a)
@@ -772,13 +782,13 @@ local function CreateSortDropdown(parent)
     return dropdown
 end
 
--- Create item row for the scroll list (theme-aware)
+-- Create item row for the scroll list (theme-aware) - Clean modern rows
 local function CreateItemRow(parent, index)
     local theme = addon:GetCurrentTheme()
     local row = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    row:SetSize(parent:GetWidth() - 4, 28)
+    row:SetSize(parent:GetWidth() - 4, 26)
     
-    -- Alternating row colors
+    -- Alternating row colors - very subtle
     if index % 2 == 0 then
         row:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -786,38 +796,41 @@ local function CreateItemRow(parent, index)
         row:SetBackdropColor(theme.rowAltBg.r, theme.rowAltBg.g, theme.rowAltBg.b, theme.rowAltBg.a)
     end
     
-    -- Item icon
+    -- Item icon - slightly smaller, cleaner
     local icon = row:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(22, 22)
-    icon:SetPoint("LEFT", 4, 0)
+    icon:SetSize(20, 20)
+    icon:SetPoint("LEFT", 6, 0)
     icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     row.icon = icon
     
-    -- Item name
+    -- Item name - clean typography
     local name = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    name:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+    name:SetPoint("LEFT", icon, "RIGHT", 8, 0)
     name:SetPoint("RIGHT", row, "RIGHT", -70, 0)
     name:SetJustifyH("LEFT")
     name:SetWordWrap(false)
+    name:SetFont(name:GetFont(), 10)
     row.name = name
     
     -- Count
     local count = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    count:SetPoint("RIGHT", row, "RIGHT", -50, 0)
+    count:SetPoint("RIGHT", row, "RIGHT", -48, 0)
     count:SetWidth(25)
     count:SetJustifyH("RIGHT")
     count:SetTextColor(theme.labelColor.r, theme.labelColor.g, theme.labelColor.b)
+    count:SetFont(count:GetFont(), 10)
     row.count = count
     
     -- Value
     local value = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    value:SetPoint("RIGHT", row, "RIGHT", -6, 0)
-    value:SetWidth(42)
+    value:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+    value:SetWidth(38)
     value:SetJustifyH("RIGHT")
     value:SetTextColor(theme.goldColor.r, theme.goldColor.g, theme.goldColor.b)
+    value:SetFont(value:GetFont(), 10)
     row.value = value
     
-    -- Highlight effect
+    -- Highlight effect - subtle
     local highlight = row:CreateTexture(nil, "HIGHLIGHT")
     highlight:SetAllPoints()
     highlight:SetColorTexture(theme.rowHighlight.r, theme.rowHighlight.g, theme.rowHighlight.b, theme.rowHighlight.a)
@@ -865,26 +878,30 @@ function addon:CreateMainFrame()
     local pos = self:GetSetting("ui.position")
     frame:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
     
-    CreateStyledBackdrop(frame, 0.95)
+    CreateStyledBackdrop(frame, 0.97)
     
-    -- Add subtle gradient at top
+    -- Add subtle inner glow at top for depth and polish
+    local innerGlow = theme.innerGlow or { r = 0.3, g = 0.3, b = 0.3, a = 0.06 }
     local headerGradient = frame:CreateTexture(nil, "ARTWORK")
-    headerGradient:SetHeight(50)
-    headerGradient:SetPoint("TOPLEFT", 1, -1)
-    headerGradient:SetPoint("TOPRIGHT", -1, -1)
-    headerGradient:SetColorTexture(theme.headerGradient.r, theme.headerGradient.g, theme.headerGradient.b, theme.headerGradient.a)
-    headerGradient:SetGradient("VERTICAL", CreateColor(theme.headerGradient.r, theme.headerGradient.g, theme.headerGradient.b, 0), CreateColor(theme.headerGradient.r, theme.headerGradient.g, theme.headerGradient.b, theme.headerGradient.a))
+    headerGradient:SetHeight(70)
+    headerGradient:SetPoint("TOPLEFT", 2, -2)
+    headerGradient:SetPoint("TOPRIGHT", -2, -2)
+    headerGradient:SetColorTexture(1, 1, 1, 1)
+    headerGradient:SetGradient("VERTICAL", 
+        CreateColor(innerGlow.r, innerGlow.g, innerGlow.b, 0), 
+        CreateColor(innerGlow.r, innerGlow.g, innerGlow.b, innerGlow.a))
     frame.headerGradient = headerGradient
     
-    -- Title
+    -- Title - Clean modern typography with warm gold
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("TOPLEFT", 14, -12)
+    title:SetPoint("TOPLEFT", 14, -11)
     title:SetText(theme.titleColor .. theme.titleText .. "|r")
-    title:SetFont(title:GetFont(), 14, "OUTLINE")
+    title:SetFont(title:GetFont(), 12, "")
     frame.title = title
     
     local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    subtitle:SetPoint("LEFT", title, "RIGHT", 6, 0)
+    subtitle:SetPoint("LEFT", title, "RIGHT", 8, 0)
+    subtitle:SetFont(subtitle:GetFont(), 10)
     subtitle:SetText("Loot Tracker")
     subtitle:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b)
     frame.subtitle = subtitle
@@ -946,10 +963,10 @@ function addon:CreateMainFrame()
     local tabHeight = 22
     local activeTab = addon:GetSetting("ui.activeTab") or "loot"
     
-    -- Helper function to create tab button
+    -- Helper function to create tab button - Modern pill style
     local function CreateTabButton(parent, text, tabId, xOffset)
         local tab = CreateFrame("Button", nil, parent, "BackdropTemplate")
-        tab:SetSize(60, tabHeight)
+        tab:SetSize(58, tabHeight)
         tab:SetPoint("TOPLEFT", xOffset, -30)
         tab.tabId = tabId
         
@@ -958,46 +975,50 @@ function addon:CreateMainFrame()
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             tile = false,
             edgeSize = 1,
-            insets = { left = 0, right = 0, top = 0, bottom = 0 }
+            insets = { left = 1, right = 1, top = 1, bottom = 1 }
         })
         
         local label = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         label:SetPoint("CENTER", 0, 0)
         label:SetText(text)
+        label:SetFont(label:GetFont(), 10)
         tab.label = label
         
         return tab
     end
     
-    local lootTab = CreateTabButton(frame, "Loot", "loot", 10)
+    local lootTab = CreateTabButton(frame, "Loot", "loot", 12)
     local honorTab = CreateTabButton(frame, "Honor", "honor", 72)
     frame.lootTab = lootTab
     frame.honorTab = honorTab
     
-    -- Tab styling function
+    -- Tab styling function - Modern active/inactive states
     local function UpdateTabStyles()
         local t = addon:GetCurrentTheme()
         local currentTab = addon:GetSetting("ui.activeTab") or "loot"
+        local tabActive = t.tabActiveBg or t.sectionBg
+        local tabInactive = t.tabInactiveBg or t.buttonBg
+        local tabBorder = t.tabBorder or t.border
         
         -- Loot tab
         if currentTab == "loot" then
-            lootTab:SetBackdropColor(t.sectionBg.r, t.sectionBg.g, t.sectionBg.b, 0.8)
-            lootTab:SetBackdropBorderColor(t.border.r, t.border.g, t.border.b, 1)
+            lootTab:SetBackdropColor(tabActive.r, tabActive.g, tabActive.b, tabActive.a or 0.9)
+            lootTab:SetBackdropBorderColor(tabBorder.r, tabBorder.g, tabBorder.b, 0.7)
             lootTab.label:SetTextColor(t.valueColor.r, t.valueColor.g, t.valueColor.b)
         else
-            lootTab:SetBackdropColor(t.buttonBg.r, t.buttonBg.g, t.buttonBg.b, 0.5)
-            lootTab:SetBackdropBorderColor(t.buttonBorder.r, t.buttonBorder.g, t.buttonBorder.b, 0.5)
+            lootTab:SetBackdropColor(tabInactive.r, tabInactive.g, tabInactive.b, tabInactive.a or 0.4)
+            lootTab:SetBackdropBorderColor(tabBorder.r, tabBorder.g, tabBorder.b, 0.3)
             lootTab.label:SetTextColor(t.mutedColor.r, t.mutedColor.g, t.mutedColor.b)
         end
         
         -- Honor tab
         if currentTab == "honor" then
-            honorTab:SetBackdropColor(t.sectionBg.r, t.sectionBg.g, t.sectionBg.b, 0.8)
-            honorTab:SetBackdropBorderColor(t.border.r, t.border.g, t.border.b, 1)
+            honorTab:SetBackdropColor(tabActive.r, tabActive.g, tabActive.b, tabActive.a or 0.9)
+            honorTab:SetBackdropBorderColor(tabBorder.r, tabBorder.g, tabBorder.b, 0.7)
             honorTab.label:SetTextColor(t.valueColor.r, t.valueColor.g, t.valueColor.b)
         else
-            honorTab:SetBackdropColor(t.buttonBg.r, t.buttonBg.g, t.buttonBg.b, 0.5)
-            honorTab:SetBackdropBorderColor(t.buttonBorder.r, t.buttonBorder.g, t.buttonBorder.b, 0.5)
+            honorTab:SetBackdropColor(tabInactive.r, tabInactive.g, tabInactive.b, tabInactive.a or 0.4)
+            honorTab:SetBackdropBorderColor(tabBorder.r, tabBorder.g, tabBorder.b, 0.3)
             honorTab.label:SetTextColor(t.mutedColor.r, t.mutedColor.g, t.mutedColor.b)
         end
     end
@@ -1500,7 +1521,8 @@ function addon:CreateMainFrame()
     
     local honorGainedValue = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     honorGainedValue:SetPoint("LEFT", honorGainedLabel, "RIGHT", 4, 0)
-    honorGainedValue:SetTextColor(0.8, 0.2, 0.8)  -- Purple for honor
+    local honorColor = theme.honorColor or { r = 0.75, g = 0.4, b = 0.85 }
+    honorGainedValue:SetTextColor(honorColor.r, honorColor.g, honorColor.b)
     honorGainedValue:SetFont(honorGainedValue:GetFont(), 13)
     honorGainedValue:SetText("0")
     frame.honorGainedValue = honorGainedValue
@@ -1528,7 +1550,7 @@ function addon:CreateMainFrame()
     
     local hphValue = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     hphValue:SetPoint("LEFT", hphLabel, "RIGHT", 4, 0)
-    hphValue:SetTextColor(0.8, 0.2, 0.8)
+    hphValue:SetTextColor(honorColor.r, honorColor.g, honorColor.b)
     hphValue:SetFont(hphValue:GetFont(), 12)
     hphValue:SetText("0")
     frame.hphValue = hphValue
@@ -1559,7 +1581,7 @@ function addon:CreateMainFrame()
     
     local lifetimeHonorValue = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     lifetimeHonorValue:SetPoint("LEFT", lifetimeHonorLabel, "RIGHT", 4, 0)
-    lifetimeHonorValue:SetTextColor(0.8, 0.2, 0.8)
+    lifetimeHonorValue:SetTextColor(honorColor.r, honorColor.g, honorColor.b)
     lifetimeHonorValue:SetText("0")
     frame.lifetimeHonorValue = lifetimeHonorValue
     
@@ -1599,14 +1621,14 @@ function addon:CreateMainFrame()
         frame.collapseBtn:Hide()
     end
     
-    -- Bottom section with buttons
+    -- Bottom section with buttons - Clean modern layout
     local bottomSection = CreateFrame("Frame", nil, frame)
-    bottomSection:SetPoint("BOTTOMLEFT", 10, 10)
-    bottomSection:SetPoint("BOTTOMRIGHT", -10, 10)
-    bottomSection:SetHeight(32)
+    bottomSection:SetPoint("BOTTOMLEFT", 12, 12)
+    bottomSection:SetPoint("BOTTOMRIGHT", -12, 12)
+    bottomSection:SetHeight(28)
     
     -- Theme button
-    local themeBtn = CreateStyledButton(bottomSection, "Theme", 55, 24)
+    local themeBtn = CreateStyledButton(bottomSection, "Theme", 52, 22)
     themeBtn:SetPoint("LEFT", 0, 0)
     themeBtn:SetScript("OnClick", function()
         addon:CycleTheme()
@@ -1631,8 +1653,8 @@ function addon:CreateMainFrame()
     frame.themeBtn = themeBtn
     
     -- Toggle AH/Vendor button
-    local togglePriceBtn = CreateStyledButton(bottomSection, "AH Prices", 70, 24)
-    togglePriceBtn:SetPoint("LEFT", themeBtn, "RIGHT", 6, 0)
+    local togglePriceBtn = CreateStyledButton(bottomSection, "AH Prices", 62, 22)
+    togglePriceBtn:SetPoint("LEFT", themeBtn, "RIGHT", 5, 0)
     togglePriceBtn:SetScript("OnClick", function()
         local current = addon:GetSetting("features.useAHPrices")
         addon:SetSetting("features.useAHPrices", not current)
@@ -1655,14 +1677,14 @@ function addon:CreateMainFrame()
     frame.togglePriceBtn = togglePriceBtn
     
     -- Reset session button
-    local resetBtn = CreateStyledButton(bottomSection, "Reset", 55, 24)
+    local resetBtn = CreateStyledButton(bottomSection, "Reset", 50, 22)
     resetBtn:SetPoint("RIGHT", 0, 0)
     resetBtn:SetScript("OnClick", function()
         StaticPopup_Show("FARMER_RESET_CONFIRM")
     end)
     resetBtn:SetScript("OnEnter", function(self)
-        self:SetBackdropColor(0.35, 0.15, 0.15, 1)
-        self:SetBackdropBorderColor(0.8, 0.3, 0.3, 1)
+        self:SetBackdropColor(0.28, 0.10, 0.10, 1)
+        self:SetBackdropBorderColor(0.55, 0.20, 0.20, 1)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:SetText("Reset session data", 1, 1, 1)
         GameTooltip:Show()
@@ -1676,8 +1698,8 @@ function addon:CreateMainFrame()
     frame.resetBtn = resetBtn
     
     -- Lifetime stats button
-    local lifetimeBtn = CreateStyledButton(bottomSection, "Lifetime", 60, 24)
-    lifetimeBtn:SetPoint("RIGHT", resetBtn, "LEFT", -6, 0)
+    local lifetimeBtn = CreateStyledButton(bottomSection, "Lifetime", 56, 22)
+    lifetimeBtn:SetPoint("RIGHT", resetBtn, "LEFT", -5, 0)
     lifetimeBtn:SetScript("OnClick", function()
         addon:ShowLifetimePopup()
     end)
