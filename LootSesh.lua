@@ -25,6 +25,10 @@ local events = {
     "UNIT_SPELLCAST_INTERRUPTED",
     "LOOT_OPENED",
     "LOOT_CLOSED",
+    -- Honor tracking events
+    "HONOR_XP_UPDATE",
+    "CHAT_MSG_COMBAT_HONOR_GAIN",
+    "PLAYER_PVP_KILLS_CHANGED",
 }
 
 -- Register all events
@@ -74,6 +78,8 @@ function eventHandlers:PLAYER_LOGIN()
         session.totalAHValue = 0
         session.itemsLooted = {}
         session.rawGoldLooted = 0
+        session.honorGained = 0
+        session.honorableKills = 0
     end
     
     -- Update last save time
@@ -271,6 +277,35 @@ function eventHandlers:CHAT_MSG_MONEY(msg)
         addon:Debug("Looted money: " .. addon.utils.FormatMoney(copper))
         addon:UpdateMainFrame()
     end
+end
+
+-- HONOR_XP_UPDATE: Fires when honor is gained (retail/modern clients)
+function eventHandlers:HONOR_XP_UPDATE(unitTarget, currentHonor, maxHonor)
+    -- This is mainly for modern WoW, may not fire in Classic
+    addon:Debug("Honor XP update detected")
+end
+
+-- CHAT_MSG_COMBAT_HONOR_GAIN: Fires when honor is gained from kills
+function eventHandlers:CHAT_MSG_COMBAT_HONOR_GAIN(msg)
+    -- Parse honor from message like "PlayerName dies, honorable kill Rank: Private (123 Honor Points)"
+    -- Or simpler: "You have been awarded 123 honor points"
+    local honor = msg:match("(%d+) [Hh]onor")
+    if honor then
+        honor = tonumber(honor) or 0
+        if honor > 0 then
+            addon.charDB.session.honorGained = (addon.charDB.session.honorGained or 0) + honor
+            addon.charDB.session.honorableKills = (addon.charDB.session.honorableKills or 0) + 1
+            addon.charDB.lifetime.honorGained = (addon.charDB.lifetime.honorGained or 0) + honor
+            addon.charDB.lifetime.honorableKills = (addon.charDB.lifetime.honorableKills or 0) + 1
+            addon:Debug("Honor gained: " .. honor .. " points")
+            addon:UpdateHonorTab()
+        end
+    end
+end
+
+-- PLAYER_PVP_KILLS_CHANGED: Fires when PvP kills change
+function eventHandlers:PLAYER_PVP_KILLS_CHANGED(numKills)
+    addon:Debug("PvP kills changed: " .. tostring(numKills))
 end
 
 -- Main event dispatcher
@@ -907,10 +942,127 @@ function addon:CreateMainFrame()
         addon:SetSetting("ui.visible", false)
     end)
     
-    -- Stats section
-    local statsSection = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    statsSection:SetPoint("TOPLEFT", 10, -35)
-    statsSection:SetPoint("TOPRIGHT", -10, -35)
+    -- Tab buttons
+    local tabHeight = 22
+    local activeTab = addon:GetSetting("ui.activeTab") or "loot"
+    
+    -- Helper function to create tab button
+    local function CreateTabButton(parent, text, tabId, xOffset)
+        local tab = CreateFrame("Button", nil, parent, "BackdropTemplate")
+        tab:SetSize(60, tabHeight)
+        tab:SetPoint("TOPLEFT", xOffset, -30)
+        tab.tabId = tabId
+        
+        tab:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            tile = false,
+            edgeSize = 1,
+            insets = { left = 0, right = 0, top = 0, bottom = 0 }
+        })
+        
+        local label = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        label:SetPoint("CENTER", 0, 0)
+        label:SetText(text)
+        tab.label = label
+        
+        return tab
+    end
+    
+    local lootTab = CreateTabButton(frame, "Loot", "loot", 10)
+    local honorTab = CreateTabButton(frame, "Honor", "honor", 72)
+    frame.lootTab = lootTab
+    frame.honorTab = honorTab
+    
+    -- Tab styling function
+    local function UpdateTabStyles()
+        local t = addon:GetCurrentTheme()
+        local currentTab = addon:GetSetting("ui.activeTab") or "loot"
+        
+        -- Loot tab
+        if currentTab == "loot" then
+            lootTab:SetBackdropColor(t.sectionBg.r, t.sectionBg.g, t.sectionBg.b, 0.8)
+            lootTab:SetBackdropBorderColor(t.border.r, t.border.g, t.border.b, 1)
+            lootTab.label:SetTextColor(t.valueColor.r, t.valueColor.g, t.valueColor.b)
+        else
+            lootTab:SetBackdropColor(t.buttonBg.r, t.buttonBg.g, t.buttonBg.b, 0.5)
+            lootTab:SetBackdropBorderColor(t.buttonBorder.r, t.buttonBorder.g, t.buttonBorder.b, 0.5)
+            lootTab.label:SetTextColor(t.mutedColor.r, t.mutedColor.g, t.mutedColor.b)
+        end
+        
+        -- Honor tab
+        if currentTab == "honor" then
+            honorTab:SetBackdropColor(t.sectionBg.r, t.sectionBg.g, t.sectionBg.b, 0.8)
+            honorTab:SetBackdropBorderColor(t.border.r, t.border.g, t.border.b, 1)
+            honorTab.label:SetTextColor(t.valueColor.r, t.valueColor.g, t.valueColor.b)
+        else
+            honorTab:SetBackdropColor(t.buttonBg.r, t.buttonBg.g, t.buttonBg.b, 0.5)
+            honorTab:SetBackdropBorderColor(t.buttonBorder.r, t.buttonBorder.g, t.buttonBorder.b, 0.5)
+            honorTab.label:SetTextColor(t.mutedColor.r, t.mutedColor.g, t.mutedColor.b)
+        end
+    end
+    frame.UpdateTabStyles = UpdateTabStyles
+    
+    -- Tab click handlers
+    local function SwitchToTab(tabId)
+        addon:SetSetting("ui.activeTab", tabId)
+        UpdateTabStyles()
+        
+        -- Show/hide content frames
+        if frame.lootContent then frame.lootContent:SetShown(tabId == "loot") end
+        if frame.honorContent then frame.honorContent:SetShown(tabId == "honor") end
+        
+        -- Update subtitle and collapse button visibility
+        if tabId == "loot" then
+            frame.subtitle:SetText("Loot Tracker")
+            frame.collapseBtn:Show()
+            frame.togglePriceBtn:Show()
+            -- Restore collapsed state for loot tab
+            addon:UpdateItemsCollapsedState()
+        else
+            frame.subtitle:SetText("Honor Tracker")
+            frame.collapseBtn:Hide()
+            frame.togglePriceBtn:Hide()
+            -- Honor tab uses fixed compact height to prevent overlap
+            local honorHeight = 220
+            frame:SetHeight(honorHeight)
+            frame:SetResizeBounds(280, 220, 500, 220)  -- Lock height for honor tab
+        end
+    end
+    frame.SwitchToTab = SwitchToTab
+    
+    lootTab:SetScript("OnClick", function() SwitchToTab("loot") end)
+    honorTab:SetScript("OnClick", function() SwitchToTab("honor") end)
+    
+    lootTab:SetScript("OnEnter", function(self)
+        if addon:GetSetting("ui.activeTab") ~= "loot" then
+            local t = addon:GetCurrentTheme()
+            self:SetBackdropColor(t.buttonHoverBg.r, t.buttonHoverBg.g, t.buttonHoverBg.b, 0.7)
+        end
+    end)
+    lootTab:SetScript("OnLeave", function(self) UpdateTabStyles() end)
+    
+    honorTab:SetScript("OnEnter", function(self)
+        if addon:GetSetting("ui.activeTab") ~= "honor" then
+            local t = addon:GetCurrentTheme()
+            self:SetBackdropColor(t.buttonHoverBg.r, t.buttonHoverBg.g, t.buttonHoverBg.b, 0.7)
+        end
+    end)
+    honorTab:SetScript("OnLeave", function(self) UpdateTabStyles() end)
+    
+    -- Initialize tab styles
+    UpdateTabStyles()
+    
+    --[[ LOOT TAB CONTENT ]]--
+    local lootContent = CreateFrame("Frame", nil, frame)
+    lootContent:SetPoint("TOPLEFT", 0, -52)
+    lootContent:SetPoint("BOTTOMRIGHT", 0, 0)
+    frame.lootContent = lootContent
+    
+    -- Stats section (now parented to lootContent)
+    local statsSection = CreateFrame("Frame", nil, lootContent, "BackdropTemplate")
+    statsSection:SetPoint("TOPLEFT", 10, 0)
+    statsSection:SetPoint("TOPRIGHT", -10, 0)
     statsSection:SetHeight(105)
     CreateStyledBackdrop(statsSection, 0.5, true)
     frame.statsSection = statsSection
@@ -984,15 +1136,15 @@ function addon:CreateMainFrame()
     frame.duration = durationValue
     
     -- Items section header
-    local itemsHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    itemsHeader:SetPoint("TOPLEFT", 14, -150)
+    local itemsHeader = lootContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    itemsHeader:SetPoint("TOPLEFT", 14, -115)
     itemsHeader:SetText("LOOTED ITEMS")
     itemsHeader:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b)
     itemsHeader:SetFont(itemsHeader:GetFont(), 9)
     frame.itemsHeader = itemsHeader
     
     -- Item count (anchored after header text)
-    local itemCountText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local itemCountText = lootContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     itemCountText:SetPoint("LEFT", itemsHeader, "RIGHT", 4, 0)
     itemCountText:SetTextColor(theme.mutedColor.r - 0.1, theme.mutedColor.g - 0.1, theme.mutedColor.b - 0.1)
     itemCountText:SetText("(0)")
@@ -1002,9 +1154,9 @@ function addon:CreateMainFrame()
     -- Order from right to left: [Sort Dir] [Sort Dropdown] [Filter Dropdown]
     
     -- Sort direction button (rightmost)
-    local sortDirBtn = CreateFrame("Button", nil, frame, "BackdropTemplate")
+    local sortDirBtn = CreateFrame("Button", nil, lootContent, "BackdropTemplate")
     sortDirBtn:SetSize(20, 18)
-    sortDirBtn:SetPoint("TOPRIGHT", -10, -148)
+    sortDirBtn:SetPoint("TOPRIGHT", -10, -113)
     sortDirBtn:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -1041,12 +1193,12 @@ function addon:CreateMainFrame()
     end)
     
     -- Sort dropdown (anchored to left of sort direction button)
-    local sortDropdown = CreateSortDropdown(frame)
+    local sortDropdown = CreateSortDropdown(lootContent)
     sortDropdown:SetPoint("RIGHT", sortDirBtn, "LEFT", -3, 0)
     frame.sortDropdown = sortDropdown
     
     -- Filter dropdown button (anchored to left of sort dropdown)
-    local filterBtn = CreateFrame("Button", nil, frame, "BackdropTemplate")
+    local filterBtn = CreateFrame("Button", nil, lootContent, "BackdropTemplate")
     filterBtn:SetSize(50, 18)
     filterBtn:SetPoint("RIGHT", sortDropdown, "LEFT", -3, 0)
     filterBtn:SetBackdrop({
@@ -1262,9 +1414,9 @@ function addon:CreateMainFrame()
     end)
     
     -- Column headers
-    local headerRow = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    headerRow:SetPoint("TOPLEFT", 10, -172)
-    headerRow:SetPoint("TOPRIGHT", -10, -172)
+    local headerRow = CreateFrame("Frame", nil, lootContent, "BackdropTemplate")
+    headerRow:SetPoint("TOPLEFT", 10, -135)
+    headerRow:SetPoint("TOPRIGHT", -10, -135)
     headerRow:SetHeight(18)
     headerRow:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -1294,8 +1446,8 @@ function addon:CreateMainFrame()
     frame.colValue = colValue
     
     -- Scrollable item list
-    local scrollFrame = CreateFrame("ScrollFrame", "FarmerScrollFrame", frame, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", 10, -192)
+    local scrollFrame = CreateFrame("ScrollFrame", "FarmerScrollFrame", lootContent, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 10, -155)
     scrollFrame:SetPoint("BOTTOMRIGHT", -28, 50)
     
     -- Style the scroll bar
@@ -1313,6 +1465,137 @@ function addon:CreateMainFrame()
     
     -- Item rows pool
     frame.itemRows = {}
+    
+    --[[ HONOR TAB CONTENT ]]--
+    local honorContent = CreateFrame("Frame", nil, frame)
+    honorContent:SetPoint("TOPLEFT", 0, -52)
+    honorContent:SetPoint("BOTTOMRIGHT", 0, 0)
+    honorContent:Hide()  -- Start hidden
+    frame.honorContent = honorContent
+    
+    -- Honor stats section
+    local honorStatsSection = CreateFrame("Frame", nil, honorContent, "BackdropTemplate")
+    honorStatsSection:SetPoint("TOPLEFT", 10, 0)
+    honorStatsSection:SetPoint("TOPRIGHT", -10, 0)
+    honorStatsSection:SetHeight(115)
+    CreateStyledBackdrop(honorStatsSection, 0.5, true)
+    frame.honorStatsSection = honorStatsSection
+    
+    -- Session Honor Header
+    local honorSessionLabel = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    honorSessionLabel:SetPoint("TOPLEFT", 12, -6)
+    honorSessionLabel:SetText("SESSION")
+    honorSessionLabel:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b)
+    honorSessionLabel:SetFont(honorSessionLabel:GetFont(), 8)
+    frame.honorSessionLabel = honorSessionLabel
+    
+    -- Session Honor Gained
+    local honorGainedLabel = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    honorGainedLabel:SetPoint("TOPLEFT", 12, -18)
+    honorGainedLabel:SetText("Honor:")
+    honorGainedLabel:SetTextColor(theme.labelColor.r, theme.labelColor.g, theme.labelColor.b)
+    frame.honorGainedLabel = honorGainedLabel
+    
+    local honorGainedValue = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    honorGainedValue:SetPoint("LEFT", honorGainedLabel, "RIGHT", 4, 0)
+    honorGainedValue:SetTextColor(0.8, 0.2, 0.8)  -- Purple for honor
+    honorGainedValue:SetFont(honorGainedValue:GetFont(), 13)
+    honorGainedValue:SetText("0")
+    frame.honorGainedValue = honorGainedValue
+    
+    -- Session HKs
+    local hksLabel = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    hksLabel:SetPoint("TOPLEFT", 12, -34)
+    hksLabel:SetText("HKs:")
+    hksLabel:SetTextColor(theme.labelColor.r, theme.labelColor.g, theme.labelColor.b)
+    frame.hksLabel = hksLabel
+    
+    local hksValue = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    hksValue:SetPoint("LEFT", hksLabel, "RIGHT", 4, 0)
+    hksValue:SetTextColor(theme.valueColor.r, theme.valueColor.g, theme.valueColor.b)
+    hksValue:SetFont(hksValue:GetFont(), 12)
+    hksValue:SetText("0")
+    frame.hksValue = hksValue
+    
+    -- Honor per hour
+    local hphLabel = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    hphLabel:SetPoint("TOPLEFT", 12, -50)
+    hphLabel:SetText("Honor/hr:")
+    hphLabel:SetTextColor(theme.labelColor.r, theme.labelColor.g, theme.labelColor.b)
+    frame.hphLabel = hphLabel
+    
+    local hphValue = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    hphValue:SetPoint("LEFT", hphLabel, "RIGHT", 4, 0)
+    hphValue:SetTextColor(0.8, 0.2, 0.8)
+    hphValue:SetFont(hphValue:GetFont(), 12)
+    hphValue:SetText("0")
+    frame.hphValue = hphValue
+    
+    -- Separator
+    local honorSeparator = honorStatsSection:CreateTexture(nil, "ARTWORK")
+    honorSeparator:SetHeight(1)
+    honorSeparator:SetPoint("LEFT", 12, 0)
+    honorSeparator:SetPoint("RIGHT", -12, 0)
+    honorSeparator:SetPoint("TOP", 0, -66)
+    honorSeparator:SetColorTexture(theme.separator.r, theme.separator.g, theme.separator.b, theme.separator.a)
+    frame.honorSeparator = honorSeparator
+    
+    -- Lifetime Honor Header
+    local honorLifetimeLabel = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    honorLifetimeLabel:SetPoint("TOPLEFT", 12, -72)
+    honorLifetimeLabel:SetText("LIFETIME")
+    honorLifetimeLabel:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b)
+    honorLifetimeLabel:SetFont(honorLifetimeLabel:GetFont(), 8)
+    frame.honorLifetimeLabel = honorLifetimeLabel
+    
+    -- Lifetime Honor Gained
+    local lifetimeHonorLabel = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    lifetimeHonorLabel:SetPoint("TOPLEFT", 12, -84)
+    lifetimeHonorLabel:SetText("Honor:")
+    lifetimeHonorLabel:SetTextColor(theme.labelColor.r, theme.labelColor.g, theme.labelColor.b)
+    frame.lifetimeHonorLabel = lifetimeHonorLabel
+    
+    local lifetimeHonorValue = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    lifetimeHonorValue:SetPoint("LEFT", lifetimeHonorLabel, "RIGHT", 4, 0)
+    lifetimeHonorValue:SetTextColor(0.8, 0.2, 0.8)
+    lifetimeHonorValue:SetText("0")
+    frame.lifetimeHonorValue = lifetimeHonorValue
+    
+    -- Lifetime HKs
+    local lifetimeHksLabel = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    lifetimeHksLabel:SetPoint("TOPLEFT", 12, -100)
+    lifetimeHksLabel:SetText("HKs:")
+    lifetimeHksLabel:SetTextColor(theme.labelColor.r, theme.labelColor.g, theme.labelColor.b)
+    frame.lifetimeHksLabel = lifetimeHksLabel
+    
+    local lifetimeHksValue = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    lifetimeHksValue:SetPoint("LEFT", lifetimeHksLabel, "RIGHT", 4, 0)
+    lifetimeHksValue:SetTextColor(theme.valueColor.r, theme.valueColor.g, theme.valueColor.b)
+    lifetimeHksValue:SetText("0")
+    frame.lifetimeHksValue = lifetimeHksValue
+    
+    -- Duration display on right side of honor tab
+    local honorDurationLabel = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    honorDurationLabel:SetPoint("TOPRIGHT", -14, -6)
+    honorDurationLabel:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b)
+    honorDurationLabel:SetFont(honorDurationLabel:GetFont(), 8)
+    honorDurationLabel:SetText("DURATION")
+    frame.honorDurationLabel = honorDurationLabel
+    
+    local honorDurationValue = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    honorDurationValue:SetPoint("TOPRIGHT", -14, -18)
+    honorDurationValue:SetTextColor(theme.valueColor.r, theme.valueColor.g, theme.valueColor.b)
+    honorDurationValue:SetText("0m")
+    frame.honorDuration = honorDurationValue
+    
+    -- Show correct tab on load
+    local currentTab = addon:GetSetting("ui.activeTab") or "loot"
+    lootContent:SetShown(currentTab == "loot")
+    honorContent:SetShown(currentTab == "honor")
+    if currentTab == "honor" then
+        frame.subtitle:SetText("Honor Tracker")
+        frame.collapseBtn:Hide()
+    end
     
     -- Bottom section with buttons
     local bottomSection = CreateFrame("Frame", nil, frame)
@@ -1593,8 +1876,8 @@ function addon:UpdateItemsCollapsedState()
     
     local theme = self:GetCurrentTheme()
     local collapsed = self:GetSetting("ui.itemsCollapsed") or false
+    local activeTab = self:GetSetting("ui.activeTab") or "loot"
     
-    -- Update collapse button text - show label when collapsed for clarity
     -- Update collapse button text
     if frame.collapseText then
         frame.collapseText:SetText(collapsed and "+" or "-")
@@ -1615,19 +1898,22 @@ function addon:UpdateItemsCollapsedState()
         if frame.sortDropdown and frame.sortDropdown.menu then frame.sortDropdown.menu:Hide() end
     end
     
-    -- Get saved size for expanded state
-    local savedSize = self:GetSetting("ui.size") or { width = 320, height = 420 }
-    
-    -- Adjust frame size based on collapsed state
-    if collapsed then
-        -- Collapsed: compact height just showing stats + expand button + bottom buttons
-        local collapsedHeight = 190  -- Title(35) + Stats(105) + padding + buttons(32) + margins
-        frame:SetHeight(collapsedHeight)
-        frame:SetResizeBounds(280, collapsedHeight, 500, collapsedHeight)  -- Lock height when collapsed
-    else
-        -- Expanded: restore saved size and normal resize bounds
-        frame:SetHeight(savedSize.height)
-        frame:SetResizeBounds(280, 300, 500, 700)
+    -- Only adjust frame size if we're on the loot tab
+    if activeTab == "loot" then
+        -- Get saved size for expanded state
+        local savedSize = self:GetSetting("ui.size") or { width = 320, height = 420 }
+        
+        -- Adjust frame size based on collapsed state
+        if collapsed then
+            -- Collapsed: compact height just showing stats + expand button + bottom buttons
+            local collapsedHeight = 210  -- Title + tabs + Stats + padding + buttons + margins
+            frame:SetHeight(collapsedHeight)
+            frame:SetResizeBounds(280, collapsedHeight, 500, collapsedHeight)  -- Lock height when collapsed
+        else
+            -- Expanded: restore saved size and normal resize bounds
+            frame:SetHeight(savedSize.height)
+            frame:SetResizeBounds(280, 300, 500, 700)
+        end
     end
 end
 
@@ -1772,6 +2058,84 @@ function addon:ApplyTheme()
     
     -- Restore collapsed state after theme change
     self:UpdateItemsCollapsedState()
+    
+    -- Update tab styles
+    if frame.UpdateTabStyles then
+        frame.UpdateTabStyles()
+    end
+    
+    -- Honor tab theming
+    if frame.honorStatsSection then
+        frame.honorStatsSection:SetBackdropColor(theme.sectionBg.r, theme.sectionBg.g, theme.sectionBg.b, theme.sectionBg.a)
+        frame.honorStatsSection:SetBackdropBorderColor(theme.border.r, theme.border.g, theme.border.b, theme.border.a)
+    end
+    if frame.honorSessionLabel then frame.honorSessionLabel:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b) end
+    if frame.honorGainedLabel then frame.honorGainedLabel:SetTextColor(theme.labelColor.r, theme.labelColor.g, theme.labelColor.b) end
+    if frame.hksLabel then frame.hksLabel:SetTextColor(theme.labelColor.r, theme.labelColor.g, theme.labelColor.b) end
+    if frame.hksValue then frame.hksValue:SetTextColor(theme.valueColor.r, theme.valueColor.g, theme.valueColor.b) end
+    if frame.hphLabel then frame.hphLabel:SetTextColor(theme.labelColor.r, theme.labelColor.g, theme.labelColor.b) end
+    if frame.honorSeparator then frame.honorSeparator:SetColorTexture(theme.separator.r, theme.separator.g, theme.separator.b, theme.separator.a) end
+    if frame.honorLifetimeLabel then frame.honorLifetimeLabel:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b) end
+    if frame.lifetimeHonorLabel then frame.lifetimeHonorLabel:SetTextColor(theme.labelColor.r, theme.labelColor.g, theme.labelColor.b) end
+    if frame.lifetimeHksLabel then frame.lifetimeHksLabel:SetTextColor(theme.labelColor.r, theme.labelColor.g, theme.labelColor.b) end
+    if frame.lifetimeHksValue then frame.lifetimeHksValue:SetTextColor(theme.valueColor.r, theme.valueColor.g, theme.valueColor.b) end
+    if frame.honorDurationLabel then frame.honorDurationLabel:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b) end
+    if frame.honorDuration then frame.honorDuration:SetTextColor(theme.valueColor.r, theme.valueColor.g, theme.valueColor.b) end
+    
+    -- Update honor tab
+    self:UpdateHonorTab()
+end
+
+-- Update honor tab display
+function addon:UpdateHonorTab()
+    local frame = self.mainFrame
+    if not frame then return end
+    
+    local session = self.charDB.session
+    local lifetime = self.charDB.lifetime
+    
+    -- Session honor
+    local sessionHonor = session.honorGained or 0
+    local sessionHKs = session.honorableKills or 0
+    
+    if frame.honorGainedValue then
+        frame.honorGainedValue:SetText(tostring(sessionHonor))
+    end
+    if frame.hksValue then
+        frame.hksValue:SetText(tostring(sessionHKs))
+    end
+    
+    -- Honor per hour calculation
+    local startTime = session.startTime
+    if startTime and startTime > 0 then
+        local duration = time() - startTime
+        if duration >= 60 then
+            local hph = math.floor(sessionHonor * 3600 / duration)
+            if frame.hphValue then
+                frame.hphValue:SetText(tostring(hph))
+            end
+        else
+            if frame.hphValue then frame.hphValue:SetText("0") end
+        end
+    else
+        if frame.hphValue then frame.hphValue:SetText("0") end
+    end
+    
+    -- Lifetime stats
+    local lifetimeHonor = lifetime.honorGained or 0
+    local lifetimeHKs = lifetime.honorableKills or 0
+    
+    if frame.lifetimeHonorValue then
+        frame.lifetimeHonorValue:SetText(tostring(lifetimeHonor))
+    end
+    if frame.lifetimeHksValue then
+        frame.lifetimeHksValue:SetText(tostring(lifetimeHKs))
+    end
+    
+    -- Duration
+    if frame.honorDuration then
+        frame.honorDuration:SetText(self:GetSessionDuration())
+    end
 end
 
 -- Sort items based on current mode
@@ -1973,6 +2337,7 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
     if timeSinceLastUpdate >= updateInterval then
         if addon.mainFrame and addon.mainFrame:IsShown() then
             addon:UpdateMainFrame()
+            addon:UpdateHonorTab()
         end
         timeSinceLastUpdate = 0
     end

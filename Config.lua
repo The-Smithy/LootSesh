@@ -29,6 +29,7 @@ local defaults = {
         sortMode = "value",
         sortAscending = false,
         itemsCollapsed = false,  -- Whether the items list is minimized
+        activeTab = "loot",  -- Current active tab: "loot" or "honor"
     },
     
     -- Feature toggles
@@ -55,6 +56,9 @@ local charDefaults = {
         totalAHValue = 0,
         itemsLooted = {},  -- [itemID] = { count, vendorValue, ahValue, name, quality, lootSource }
         rawGoldLooted = 0,
+        -- Honor tracking
+        honorGained = 0,
+        honorableKills = 0,
     },
     sessionHistory = {},  -- Array of past sessions
     lifetime = {
@@ -62,6 +66,9 @@ local charDefaults = {
         totalAHValue = 0,
         totalItemsLooted = 0,
         rawGoldLooted = 0,
+        -- Lifetime honor stats
+        honorGained = 0,
+        honorableKills = 0,
     },
 }
 
