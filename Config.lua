@@ -28,6 +28,7 @@ local defaults = {
         },
         sortMode = "value",
         sortAscending = false,
+        itemsCollapsed = false,  -- Whether the items list is minimized
     },
     
     -- Feature toggles

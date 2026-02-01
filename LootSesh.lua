@@ -854,6 +854,52 @@ function addon:CreateMainFrame()
     subtitle:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b)
     frame.subtitle = subtitle
     
+    -- Collapse/expand toggle button for items section (in title bar)
+    local collapseBtn = CreateFrame("Button", nil, frame, "BackdropTemplate")
+    local isCollapsed = addon:GetSetting("ui.itemsCollapsed") or false
+    collapseBtn:SetSize(18, 18)
+    collapseBtn:SetPoint("LEFT", subtitle, "RIGHT", 6, 0)
+    collapseBtn:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        tile = false,
+        edgeSize = 1,
+    })
+    collapseBtn:SetBackdropColor(theme.buttonBg.r, theme.buttonBg.g, theme.buttonBg.b, 0.5)
+    collapseBtn:SetBackdropBorderColor(theme.buttonBorder.r, theme.buttonBorder.g, theme.buttonBorder.b, 0.5)
+    
+    local collapseText = collapseBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    collapseText:SetPoint("CENTER", 0, 1)
+    collapseText:SetFont(collapseText:GetFont(), 14, "OUTLINE")
+    collapseText:SetText(isCollapsed and "+" or "-")
+    collapseText:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b)
+    collapseBtn.text = collapseText
+    frame.collapseBtn = collapseBtn
+    frame.collapseText = collapseText
+    
+    collapseBtn:SetScript("OnEnter", function(self)
+        local t = addon:GetCurrentTheme()
+        self:SetBackdropColor(t.buttonHoverBg.r, t.buttonHoverBg.g, t.buttonHoverBg.b, 0.7)
+        self:SetBackdropBorderColor(t.buttonHoverBorder.r, t.buttonHoverBorder.g, t.buttonHoverBorder.b, 0.7)
+        self.text:SetTextColor(t.valueColor.r, t.valueColor.g, t.valueColor.b)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        local collapsed = addon:GetSetting("ui.itemsCollapsed") or false
+        GameTooltip:SetText(collapsed and "Show looted items" or "Hide looted items", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    collapseBtn:SetScript("OnLeave", function(self)
+        local t = addon:GetCurrentTheme()
+        self:SetBackdropColor(t.buttonBg.r, t.buttonBg.g, t.buttonBg.b, 0.5)
+        self:SetBackdropBorderColor(t.buttonBorder.r, t.buttonBorder.g, t.buttonBorder.b, 0.5)
+        self.text:SetTextColor(t.mutedColor.r, t.mutedColor.g, t.mutedColor.b)
+        GameTooltip:Hide()
+    end)
+    collapseBtn:SetScript("OnClick", function()
+        local collapsed = addon:GetSetting("ui.itemsCollapsed") or false
+        addon:SetSetting("ui.itemsCollapsed", not collapsed)
+        addon:UpdateItemsCollapsedState()
+    end)
+    
     -- Close button
     local closeBtn = CreateCloseButton(frame)
     closeBtn:SetScript("OnClick", function()
@@ -945,7 +991,7 @@ function addon:CreateMainFrame()
     itemsHeader:SetFont(itemsHeader:GetFont(), 9)
     frame.itemsHeader = itemsHeader
     
-    -- Item count (anchored to header)
+    -- Item count (anchored after header text)
     local itemCountText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     itemCountText:SetPoint("LEFT", itemsHeader, "RIGHT", 4, 0)
     itemCountText:SetTextColor(theme.mutedColor.r - 0.1, theme.mutedColor.g - 0.1, theme.mutedColor.b - 0.1)
@@ -1426,6 +1472,9 @@ function addon:CreateMainFrame()
     
     self.mainFrame = frame
     
+    -- Apply initial collapsed state
+    self:UpdateItemsCollapsedState()
+    
     -- Create reset confirmation dialog
     StaticPopupDialogs["FARMER_RESET_CONFIRM"] = {
         text = "Reset session data? This cannot be undone.",
@@ -1537,6 +1586,51 @@ function addon:UpdateFilterButtons()
     self:UpdateFilterDropdown()
 end
 
+-- Update items section collapsed state
+function addon:UpdateItemsCollapsedState()
+    local frame = self.mainFrame
+    if not frame then return end
+    
+    local theme = self:GetCurrentTheme()
+    local collapsed = self:GetSetting("ui.itemsCollapsed") or false
+    
+    -- Update collapse button text - show label when collapsed for clarity
+    -- Update collapse button text
+    if frame.collapseText then
+        frame.collapseText:SetText(collapsed and "+" or "-")
+    end
+    
+    -- Show/hide entire items section (header, count, controls, list)
+    if frame.itemsHeader then frame.itemsHeader:SetShown(not collapsed) end
+    if frame.itemCountText then frame.itemCountText:SetShown(not collapsed) end
+    if frame.filterBtn then frame.filterBtn:SetShown(not collapsed) end
+    if frame.sortDropdown then frame.sortDropdown:SetShown(not collapsed) end
+    if frame.sortDirBtn then frame.sortDirBtn:SetShown(not collapsed) end
+    if frame.headerRow then frame.headerRow:SetShown(not collapsed) end
+    if frame.scrollFrame then frame.scrollFrame:SetShown(not collapsed) end
+    
+    -- Close any open menus when collapsing
+    if collapsed then
+        if frame.filterMenu then frame.filterMenu:Hide() end
+        if frame.sortDropdown and frame.sortDropdown.menu then frame.sortDropdown.menu:Hide() end
+    end
+    
+    -- Get saved size for expanded state
+    local savedSize = self:GetSetting("ui.size") or { width = 320, height = 420 }
+    
+    -- Adjust frame size based on collapsed state
+    if collapsed then
+        -- Collapsed: compact height just showing stats + expand button + bottom buttons
+        local collapsedHeight = 190  -- Title(35) + Stats(105) + padding + buttons(32) + margins
+        frame:SetHeight(collapsedHeight)
+        frame:SetResizeBounds(280, collapsedHeight, 500, collapsedHeight)  -- Lock height when collapsed
+    else
+        -- Expanded: restore saved size and normal resize bounds
+        frame:SetHeight(savedSize.height)
+        frame:SetResizeBounds(280, 300, 500, 700)
+    end
+end
+
 -- Apply theme to all UI elements
 function addon:ApplyTheme()
     local frame = self.mainFrame
@@ -1596,6 +1690,13 @@ function addon:ApplyTheme()
     if frame.itemsHeader then frame.itemsHeader:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b) end
     if frame.itemCountText then frame.itemCountText:SetTextColor(theme.mutedColor.r - 0.1, theme.mutedColor.g - 0.1, theme.mutedColor.b - 0.1) end
     if frame.sortLabel then frame.sortLabel:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b) end
+    
+    -- Collapse button
+    if frame.collapseBtn then
+        frame.collapseBtn:SetBackdropColor(theme.buttonBg.r, theme.buttonBg.g, theme.buttonBg.b, 0.5)
+        frame.collapseBtn:SetBackdropBorderColor(theme.buttonBorder.r, theme.buttonBorder.g, theme.buttonBorder.b, 0.5)
+    end
+    if frame.collapseText then frame.collapseText:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b) end
     
     -- Filter dropdown
     if frame.filterBtn then
@@ -1668,6 +1769,9 @@ function addon:ApplyTheme()
     
     -- Update the item list to apply theme to rows
     self:UpdateItemList()
+    
+    -- Restore collapsed state after theme change
+    self:UpdateItemsCollapsedState()
 end
 
 -- Sort items based on current mode
