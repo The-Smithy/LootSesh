@@ -1017,12 +1017,14 @@ function addon:CreateMainFrame()
             frame.subtitle:SetText("Loot Tracker")
             frame.collapseBtn:Show()
             frame.togglePriceBtn:Show()
+            frame.lifetimeBtn:Show()
             -- Restore collapsed state for loot tab
             addon:UpdateItemsCollapsedState()
         else
             frame.subtitle:SetText("Honor Tracker")
             frame.collapseBtn:Hide()
             frame.togglePriceBtn:Hide()
+            frame.lifetimeBtn:Hide()
             -- Honor tab uses fixed compact height to prevent overlap
             local honorHeight = 220
             frame:SetHeight(honorHeight)
@@ -1540,15 +1542,15 @@ function addon:CreateMainFrame()
     honorSeparator:SetColorTexture(theme.separator.r, theme.separator.g, theme.separator.b, theme.separator.a)
     frame.honorSeparator = honorSeparator
     
-    -- Lifetime Honor Header
+    -- Character Honor Header
     local honorLifetimeLabel = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     honorLifetimeLabel:SetPoint("TOPLEFT", 12, -72)
-    honorLifetimeLabel:SetText("LIFETIME")
+    honorLifetimeLabel:SetText("CHARACTER")
     honorLifetimeLabel:SetTextColor(theme.mutedColor.r, theme.mutedColor.g, theme.mutedColor.b)
     honorLifetimeLabel:SetFont(honorLifetimeLabel:GetFont(), 8)
     frame.honorLifetimeLabel = honorLifetimeLabel
     
-    -- Lifetime Honor Gained
+    -- Character Current Honor
     local lifetimeHonorLabel = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     lifetimeHonorLabel:SetPoint("TOPLEFT", 12, -84)
     lifetimeHonorLabel:SetText("Honor:")
@@ -1561,10 +1563,10 @@ function addon:CreateMainFrame()
     lifetimeHonorValue:SetText("0")
     frame.lifetimeHonorValue = lifetimeHonorValue
     
-    -- Lifetime HKs
+    -- Character Total HKs
     local lifetimeHksLabel = honorStatsSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     lifetimeHksLabel:SetPoint("TOPLEFT", 12, -100)
-    lifetimeHksLabel:SetText("HKs:")
+    lifetimeHksLabel:SetText("Total HKs:")
     lifetimeHksLabel:SetTextColor(theme.labelColor.r, theme.labelColor.g, theme.labelColor.b)
     frame.lifetimeHksLabel = lifetimeHksLabel
     
@@ -2121,15 +2123,30 @@ function addon:UpdateHonorTab()
         if frame.hphValue then frame.hphValue:SetText("0") end
     end
     
-    -- Lifetime stats
-    local lifetimeHonor = lifetime.honorGained or 0
-    local lifetimeHKs = lifetime.honorableKills or 0
+    -- Character stats from game API
+    local currentHonor = 0
+    -- Try different APIs for honor (varies by game version)
+    if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo then
+        local honorInfo = C_CurrencyInfo.GetCurrencyInfo(1901)  -- Honor currency ID
+        if honorInfo then
+            currentHonor = honorInfo.quantity or 0
+        end
+    elseif GetHonorCurrency then
+        currentHonor = GetHonorCurrency() or 0
+    elseif UnitHonor then
+        currentHonor = UnitHonor("player") or 0
+    end
+    
+    local totalHKs = 0
+    if GetPVPLifetimeStats then
+        totalHKs = GetPVPLifetimeStats() or 0
+    end
     
     if frame.lifetimeHonorValue then
-        frame.lifetimeHonorValue:SetText(tostring(lifetimeHonor))
+        frame.lifetimeHonorValue:SetText(tostring(currentHonor))
     end
     if frame.lifetimeHksValue then
-        frame.lifetimeHksValue:SetText(tostring(lifetimeHKs))
+        frame.lifetimeHksValue:SetText(tostring(totalHKs))
     end
     
     -- Duration
